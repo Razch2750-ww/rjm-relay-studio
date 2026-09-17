@@ -4,7 +4,8 @@ export type Params = Record<string, string | number | boolean>;
 export type Sheet = "power" | "control";
 export type Node = { id: string; type: string; tag: string; label: string; x: number; y: number; rotation: number; sheet: Sheet; params: Params };
 export type Wire = { id: string; from: string; to: string; label: string; color: string; bends: { x: number; y: number }[] };
-export type Project = { format: "rjm-relay-studio"; version: 1; id: string; name: string; notes: string; nodes: Node[]; wires: Wire[]; calculation: CalculationInput };
+export const REFERENCE_KEYS = ["jago", "lion-sdp", "lion-pump", "lion-freezer-chiller", "lion-chiller", "dsv"] as const;
+export type Project = { format: "rjm-relay-studio"; version: 1; id: string; name: string; notes: string; referenceKey?: typeof REFERENCE_KEYS[number]; nodes: Node[]; wires: Wire[]; calculation: CalculationInput };
 export type CalculationInput = {
   mode: "nameplate" | "quick"; current: number; hp: number; hpUnit: "HP" | "PK"; hpBasis: "shaft" | "cooling";
   phases: 1 | 3; voltage: number; powerFactor: number; efficiency: number; length: number;
@@ -62,8 +63,17 @@ export const CATALOG: Record<string, Definition> = {
   bus: { name: "Koneksi antarlembar", category: "Lainnya", kind: "bus", defaults: { net: "NET1" }, description: "Semua konektor dengan nama net persis sama terhubung." },
   text: { name: "Catatan", category: "Lainnya", kind: "text", width: 220, defaults: {}, description: "Anotasi bebas; tidak mempengaruhi rangkaian." },
 };
+CATALOG.xr70 = { ...CATALOG.controller, name:"Kontrol Dixell XR70CX", width:420, defaults:{...CATALOG.controller.defaults}, description:"Model fungsi dan terminal mengikuti gambar Lion: 1 common fan/comp, 6 common defrost, 4–5 suplai, 10–11–12 sensor. Bukan emulasi firmware." };
+CATALOG.cyclic = { name:"Timer pergantian berulang", category:"Coil & timer", kind:"cyclic", defaults:{voltage:230,va:3,offDuration:60,onDuration:60}, description:"Selama mendapat suplai, kontak tag bergantian NC lalu NO. Durasi contoh dalam detik; bukan jadwal kalender Theben." };
+CATALOG.selector12 = { ...CATALOG.selector, name:"Selector 1–0–2", defaults:{position:"1"}, description:"Common memilih keluaran 1 atau 2; OFF membuka keduanya." };
+CATALOG.compressor1 = { ...CATALOG.motor1, name:"Compressor / waterloop 1 fase", category:"Refrigerasi", defaults:{...CATALOG.motor1.defaults} };
+CATALOG.evaporator1 = { ...CATALOG.motor1, name:"Fan evaporator 1 fase", category:"Refrigerasi", defaults:{...CATALOG.motor1.defaults} };
+export const controllerPins = (n: Node) => n.type === "xr70"
+  ? { common:"1",comp:"3",fan:"2",defCommon:"6",defrost:"7",defNC:"8",line:"4",neutral:"5",evap:"10",sensorCommon:"11",room:"12" }
+  : { common:"1",comp:"4",fan:"5",defCommon:"1",defrost:"2",defNC:"3",line:"6",neutral:"7",evap:"8",sensorCommon:"9",room:"10" };
+export const selectorPositions = (n: Node) => n.type === "selector12" ? ["2","OFF","1"] : ["AUTO","OFF","MAN"];
 export type Port = { name: string; x: number; y: number };
-export const nodeSize = (n: Node) => ({ width: n.type==="bus"?90:CATALOG[n.type]?.width ?? 120, height: n.type==="bus"?40:n.type === "overload" || n.type === "controller" ? 140 : 100 });
+export const nodeSize = (n: Node) => ({ width: n.type==="bus"?90:CATALOG[n.type]?.width ?? 120, height: n.type==="bus"?40:n.type === "overload" || CATALOG[n.type]?.kind === "controller" ? 140 : 100 });
 export const number = (n: Node, key: string, fallback = 0) => typeof n.params[key] === "number" && Number.isFinite(n.params[key]) ? n.params[key] as number : fallback;
 export const kind = (n: Node) => CATALOG[n.type]?.kind ?? "text";
 export const poles = (n: Node) => CATALOG[n.type]?.poles ?? 1;
@@ -74,15 +84,15 @@ export function ports(n: Node): Port[] {
   const pair = (a: string, b: string) => [{ name: a, x: w / 2, y: 0 }, { name: b, x: w / 2, y: h }];
   if (d.kind === "text") return [];
   if (d.kind === "source") return row(d.poles === 3 ? ["L1", "L2", "L3", "N", "PE"] : d.poles === 0 ? ["+", "-"] : ["L", "N", "PE"], h);
-  if (d.kind === "controller") return row(["1","2","3","4","5","6","7","8","9","10"], h);
+  if (d.kind === "controller") return row(Array.from({length:n.type==="xr70"?12:10},(_,i)=>String(i+1)), h);
   if (d.kind === "pfr") return [...row(["L1","L2","L3"], 0), ...row(["Tc","Tb","Ta"], h)];
   if (d.kind === "bus") return [{ name: "A", x: w / 2, y: h }];
   if (d.kind === "junction") return [{ name: "T", x: w/2,y:0 }, { name:"B",x:w/2,y:h },{name:"L",x:0,y:h/2},{name:"R",x:w,y:h/2}];
-  if (["motor","heater"].includes(d.kind)) return [...row(d.poles === 3 ? ["U","V","W"] : d.poles === 0 ? ["+","-"] : ["L","N"],0), { name:"PE",x:w/2,y:h }];
-  if (["coil","ton","toff","impulse"].includes(d.kind)) return pair("A1","A2");
+  if (["motor","heater"].includes(d.kind)) return [...row(d.poles === 3 ? (n.params.neutralRequired?["U","V","W","N"]:["U","V","W"]) : d.poles === 0 ? ["+","-"] : ["L","N"],0), { name:"PE",x:w/2,y:h }];
+  if (["coil","ton","toff","impulse","cyclic"].includes(d.kind)) return pair("A1","A2");
   if (["lamp","buzzer","valve"].includes(d.kind)) return pair("X1","X2");
   if (d.kind === "changeover") return [...row(["11"],0),...row(["12","14"],h)];
-  if (d.kind === "selector") return [...row(["C"],0),...row(["MAN","AUTO"],h)];
+  if (d.kind === "selector") return [...row(["C"],0),...row(n.type==="selector12"?["1","2"]:["MAN","AUTO"],h)];
   if (d.kind === "pressure") return [...row(["C"],0),...row(["OK","FAULT"],h)];
   if (d.kind === "overload") return [
     {name:"1",x:25,y:0},{name:"3",x:60,y:0},{name:"5",x:95,y:0},{name:"95",x:150,y:0},{name:"97",x:195,y:0},
@@ -115,6 +125,7 @@ const nodeSchema = z.object({
 }).strict();
 const schema = z.object({
   format:z.literal("rjm-relay-studio"),version:z.literal(1),id,name:z.string().min(1).max(120),notes:z.string().max(12000),
+  referenceKey:z.enum(REFERENCE_KEYS).optional(),
   nodes:z.array(nodeSchema).max(500),wires:z.array(z.object({id,from:z.string().max(110),to:z.string().max(110),label:z.string().max(40),color:z.enum(["auto","R","S","T","N","PE","signal"]),bends:z.array(point).max(20)}).strict()).max(2000),
   calculation:calculationSchema,
 }).strict();

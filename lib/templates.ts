@@ -3,6 +3,7 @@ import type { Node, Params, Project, Sheet } from "./circuit.ts";
 
 export function jagoTemplate():Project {
   const p=blankProject("Jago Coffee · Panel cold room");
+  p.referenceKey="jago";
   const nodes:Record<string,Node>={};
   const add=(id:string,type:string,tag:string,label:string,sheet:Sheet,x:number,y:number,params:Params={})=>{
     const n={...newNode(type,sheet,x,y,tag),id,label};n.params={...n.params,...params};nodes[id]=n;p.nodes.push(n);return n;

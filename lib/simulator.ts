@@ -1,11 +1,11 @@
-import { kind, number, pin, poles, ports } from "./circuit.ts";
+import { controllerPins, kind, number, pin, poles, ports, selectorPositions } from "./circuit.ts";
 import type { Node, Project } from "./circuit.ts";
 
 export type DeviceState = { on:boolean; input:boolean; tripped:boolean; elapsed:number; offAt:number; heat:number; stage:string; stageTime:number; cycleTime:number; cool:boolean; fan:boolean; defrost:boolean; current:number; voltage:number; temperature?:number };
 export type Runtime = { now:number; devices:Record<string,DeviceState>; manual:Record<string,boolean|string>; values:Record<string,number>; requests:Record<string,boolean>; energized:Record<string,string>; wireCurrent:Record<string,number>; faults:string[]; warnings:string[]; log:{time:number;text:string}[]; halted:boolean; watts:number };
 type Potential = {source:string; phase:string; voltage:number; three:boolean; port:string};
 type Edge = {to:string; via:string};
-const coilKinds = ["coil","ton","toff","impulse"];
+const coilKinds = ["coil","ton","toff","impulse","cyclic"];
 const loadKinds = ["motor","heater","lamp","buzzer","valve"];
 const freshState = ():DeviceState => ({on:false,input:false,tripped:false,elapsed:0,offAt:0,heat:0,stage:"cooling",stageTime:0,cycleTime:0,cool:false,fan:false,defrost:false,current:0,voltage:0});
 export const freshRuntime = ():Runtime => ({now:0,devices:{},manual:{},values:{},requests:{},energized:{},wireCurrent:{},faults:[],warnings:[],log:[],halted:false,watts:0});
@@ -47,13 +47,14 @@ function makeNetwork(p:Project,r:Runtime,states:Record<string,DeviceState>) {
     if(k==="terminal")link("1","2");
     if(k==="junction"){link("T","B");link("T","L");link("T","R");}
     if(k==="bus" && String(n.params.net??"").trim())join(pin(n,"A"),"@"+String(n.params.net).trim(),"bus");
-    if(k==="selector"){const mode=r.manual[n.id]??n.params.position;if(mode==="MAN"||mode==="AUTO")link("C",mode);}
+    if(k==="selector"){const mode=String(r.manual[n.id]??n.params.position);if(mode!=="OFF"&&selectorPositions(n).includes(mode))link("C",mode);}
     if(k==="pressure")link("C",on?"OK":"FAULT");
     if(k==="pfr")link("Tc",s.on?"Ta":"Tb");
     if(k==="controller"){
-      if(s.cool)link("1","4");
-      if(s.fan)link("1","5");
-      link("1",s.defrost?"2":"3");
+      const cp=controllerPins(n);
+      if(s.cool)link(cp.common,cp.comp);
+      if(s.fan)link(cp.common,cp.fan);
+      link(cp.defCommon,s.defrost?cp.defrost:cp.defNC);
     }
   }
   for(const w of p.wires)join(w.from,w.to,"w:"+w.id);
@@ -88,8 +89,8 @@ function sensed(p:Project,r:Runtime,n:Node,a:string,b:string,net:ReturnType<type
 }
 
 function controllerState(p:Project,r:Runtime,n:Node,old:DeviceState,net:ReturnType<typeof makeNetwork>,dt:number):DeviceState {
-  const s={...old,current:0},v=net.voltage(pin(n,"6"),pin(n,"7")),nominal=number(n,"voltage",230);
-  const room=sensed(p,r,n,"9","10",net),evap=sensed(p,r,n,"8","9",net);
+  const cp=controllerPins(n),s={...old,current:0},v=net.voltage(pin(n,cp.line),pin(n,cp.neutral)),nominal=number(n,"voltage",230);
+  const room=sensed(p,r,n,cp.sensorCommon,cp.room,net),evap=sensed(p,r,n,cp.evap,cp.sensorCommon,net);
   s.voltage=v;s.on=v>=nominal*0.85&&v<=nominal*1.15;s.temperature=room;
   if(!s.on||room===undefined||evap===undefined)return {...s,cool:false,fan:false,defrost:false,stage:s.on?"sensor-fault":"off",stageTime:0,cycleTime:0,offAt:r.now};
   if(["off","sensor-fault"].includes(s.stage)){s.stage="cooling";s.stageTime=0;}
@@ -126,12 +127,17 @@ export function stepCircuit(project:Project,previous:Runtime,dt=0,tripPass=0):Ru
       const k=kind(n),base=old[n.id],s={...base,current:0},a=pin(n,"A1"),b=pin(n,"A2");
       if(coilKinds.includes(k)){
         const v=net.voltage(a,b),rated=number(n,"voltage",230),input=v>=rated*.85&&v<=rated*1.15;
-        s.input=input;s.voltage=v;s.elapsed=input?base.elapsed+dt:0;
+        s.input=input;s.voltage=v;s.elapsed=input?(base.input?base.elapsed+dt:0):0;
         if(base.input&&!input)s.offAt=r.now;
         if(k==="coil")s.on=input;
         if(k==="ton")s.on=input&&s.elapsed>=Math.max(0,number(n,"delay",5));
         if(k==="toff")s.on=input||(base.on&&r.now-s.offAt<Math.max(0,number(n,"delay",5)));
         if(k==="impulse")s.on=input&&!base.input?!base.on:base.on;
+        if(k==="cyclic"){
+          const off=Math.max(.1,number(n,"offDuration",60)),on=Math.max(.1,number(n,"onDuration",60));
+          s.on=input&&s.elapsed%(off+on)>=off;
+          s.stage=input?(s.on?"NO":"NC"):"off";
+        }
       }else if(k==="pfr"){
         s.voltage=net.three(["L1","L2","L3"].map(x=>pin(n,x)));
         const sequence=["L1","L2","L3"].map(x=>net.unique(pin(n,x))?.phase??"?").join("");
@@ -141,9 +147,10 @@ export function stepCircuit(project:Project,previous:Runtime,dt=0,tripPass=0):Ru
       else if(loadKinds.includes(k)){
         const pair=k==="motor"||k==="heater"?(poles(n)===0?["+","-"]:["L","N"]):["X1","X2"];
         const v=poles(n)===3?net.three(["U","V","W"].map(x=>pin(n,x))):net.voltage(pin(n,pair[0]),pin(n,pair[1]));
-        s.voltage=v;s.on=v>=number(n,"voltage",230)*.85&&v<=number(n,"voltage",230)*1.15;
+        const neutralOK=!n.params.neutralRequired||(net.unique(pin(n,"N"))?.phase==="N"&&net.unique(pin(n,"N"))?.source===net.unique(pin(n,"U"))?.source);
+        s.voltage=v;s.on=neutralOK&&v>=number(n,"voltage",230)*.85&&v<=number(n,"voltage",230)*1.15;
         s.elapsed=s.on?base.elapsed+dt:0;
-      }else if(k==="contactor"||k==="no")s.on=!!net.driven[n.tag];
+      }else if(k==="contactor"||k==="no"||k==="changeover")s.on=!!net.driven[n.tag];
       else if(k==="nc")s.on=!net.driven[n.tag];
       else if(["breaker","fuse","rcd","switch","source"].includes(k))s.on=switched(r,n)&&!s.tripped;
       else if(["stop","estop"].includes(k))s.on=!r.manual[n.id];
@@ -162,7 +169,7 @@ export function stepCircuit(project:Project,previous:Runtime,dt=0,tripPass=0):Ru
   const edgeCurrent=new Map<string,number>();
   const consume=(port:string,amps:number)=>{for(const edge of net.path(port))edgeCurrent.set(edge,(edgeCurrent.get(edge)??0)+amps);};
   for(const n of project.nodes){
-    const k=kind(n),s=states[n.id];if(!s.on)continue;
+    const k=kind(n),s=states[n.id];if(!s.on&&!(coilKinds.includes(k)&&s.input))continue;
     if(loadKinds.includes(k)){
       const factor=poles(n)===3?Math.sqrt(3):1,pf=k==="motor"?Math.max(.01,number(n,"powerFactor",.8)):1;
       const startup=k==="motor"&&s.elapsed<number(n,"startSeconds")?Math.max(1,number(n,"startFactor",1)):1;
@@ -173,7 +180,7 @@ export function stepCircuit(project:Project,previous:Runtime,dt=0,tripPass=0):Ru
       if(["motor","heater"].includes(k)&&amps===0)r.warnings.push(n.tag+": arus/daya belum diisi; trip beban belum dapat diuji.");
       if(["motor","heater"].includes(k)&&net.unique(pin(n,"PE"))?.phase!=="PE")r.warnings.push(n.tag+": PE belum terhubung.");
     }else if(coilKinds.includes(k)&&s.input){const amps=Math.max(0,number(n,"va",3))/Math.max(1,s.voltage);consume(pin(n,"A1"),amps);consume(pin(n,"A2"),amps);}
-    else if(k==="controller"){consume(pin(n,"6"),3/Math.max(1,s.voltage));consume(pin(n,"7"),3/Math.max(1,s.voltage));}
+    else if(k==="controller"){const cp=controllerPins(n);consume(pin(n,cp.line),3/Math.max(1,s.voltage));consume(pin(n,cp.neutral),3/Math.max(1,s.voltage));}
   }
   for(const [edge,amps]of edgeCurrent){
     if(edge.startsWith("w:"))r.wireCurrent[edge.slice(2)]=amps;
@@ -207,7 +214,7 @@ export function interact(project:Project,r:Runtime,id:string,pressed?:boolean):R
   else if(k==="overload")next.devices[id]={...stateOf(r,n),tripped:true};
   else if(k==="estop")next.manual[id]=!r.manual[id];
   else if(["switch","source","breaker","fuse","rcd","pressure"].includes(k))next.manual[id]=!switched(r,n);
-  else if(k==="selector"){const value=r.manual[id]??n.params.position;next.manual[id]=value==="AUTO"?"OFF":value==="OFF"?"MAN":"AUTO";}
+  else if(k==="selector"){const positions=selectorPositions(n),value=String(r.manual[id]??n.params.position);next.manual[id]=positions[(positions.indexOf(value)+1)%positions.length];}
   else if(k==="pfr")next.manual[id+":fault"]=!r.manual[id+":fault"];
   else if(k==="controller")next.requests[id]=true;
   return stepCircuit(project,next,0);

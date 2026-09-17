@@ -29,13 +29,13 @@ export function Symbol({node:n,runtime,mini=false}:{node:Node;runtime?:Runtime;m
       {k==="valve"&&<path d={"M"+(w/2-25)+" 28l50 44V28l-50 44z"}/>}
       {(k==="motor"||k==="heater")&&<>{line(w/2,h-18,w/2,h)}<path d={"M"+(w/2-10)+" "+(h-18)+"h20m-16-5h12"}/></>}
     </>}
-    {["coil","ton","toff","impulse"].includes(k)&&<>
+    {["coil","ton","toff","impulse","cyclic"].includes(k)&&<>
       {line(w/2,0,w/2,32)}{line(w/2,68,w/2,h)}<rect x={w/2-27} y={32} width={54} height={36} fill={on?"#213b32":"#141c25"}/>
-      {k==="coil"?<path d={"M"+(w/2-27)+" 68l54-36"}/>:<text x={w/2} y={56} textAnchor="middle" fill={ink} stroke="none" fontSize="16">{k==="ton"?"t↑":k==="toff"?"t↓":"↕"}</text>}
+      {k==="coil"?<path d={"M"+(w/2-27)+" 68l54-36"}/>:<text x={w/2} y={56} textAnchor="middle" fill={ink} stroke="none" fontSize="16">{k==="ton"?"t↑":k==="toff"?"t↓":k==="cyclic"?"NC/NO":"↕"}</text>}
     </>}
     {["switch","start","stop","estop","no","nc","pressure","selector","limit","changeover"].includes(k)&&<>
       {ports(n).map(p=>line(p.x,p.y,p.x,p.y===0?28:72,p.name))}
-      {["pressure","selector","changeover"].includes(k)?<path d={"M"+w/2+" 28L"+(k==="changeover"?(on?w*2/3:w/3):k==="pressure"?(on?w/3:w*2/3):w*2/3)+" 72"}/>:line(w/2,72,on?w/2:w/2+20,28)}
+      {k==="selector"&&(runtime?.manual[n.id]??n.params.position)==="OFF"?null:["pressure","selector","changeover"].includes(k)?<path d={"M"+w/2+" 28L"+(k==="changeover"?(on?w*2/3:w/3):k==="pressure"?(on?w/3:w*2/3):(["MAN","1"].includes(String(runtime?.manual[n.id]??n.params.position))?w/3:w*2/3))+" 72"}/>:line(w/2,72,on?w/2:w/2+20,28)}
       {["start","stop","estop"].includes(k)&&<><path d={"M"+(w/2-34)+" 45h25m-25-8v16"} strokeDasharray="4 3"/>{k==="estop"&&<circle cx={w/2-38} cy={45} r={12} fill={runtime?.manual[n.id]?"#cf4e4e":"#813c3d"}/>}</>}
       {k==="nc"||k==="stop"?line(w/2-8,28,w/2+8,28):null}
     </>}
