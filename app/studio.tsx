@@ -1,5 +1,6 @@
 "use client";
 import { newId } from "../lib/id";
+import { layoutDiagram } from "../lib/diagram-layout";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { CircuitBoard,Play,Pause,RotateCcw,Undo2,Redo2,Download,Upload,FolderOpen,Plus,ZoomIn,ZoomOut,Maximize2,Trash2,Copy,RotateCw,Cloud,WifiOff,Search,FileText,MousePointer2,Cable,Settings2,ShieldAlert,Check,Printer,ChevronLeft,ChevronRight,ChevronUp,ChevronDown,Expand,Shrink } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -124,11 +125,8 @@ export default function Studio(){
   };
   const exportSVG=()=>{
     const svg=document.getElementById("circuit-canvas") as SVGSVGElement|null;if(!svg||!project)return;
-    const clone=svg.cloneNode(true) as SVGSVGElement,nodes=project.nodes.filter(n=>n.sheet===tab);
-    const xs=nodes.flatMap(n=>[n.x-60,n.x+nodeSize(n).width+60]),ys=nodes.flatMap(n=>[n.y-60,n.y+nodeSize(n).height+70]);
-    project.wires.filter(w=>nodes.some(n=>w.from.startsWith(n.id+":"))).flatMap(w=>w.bends).forEach(p=>{xs.push(p.x);ys.push(p.y);});
-    const x=Math.min(0,...xs),y=Math.min(0,...ys),w=Math.max(1200,...xs)-x+60,h=Math.max(800,...ys)-y+60;
-    clone.setAttribute("viewBox",[x,y,w,h].join(" "));clone.setAttribute("width",String(w));clone.setAttribute("height",String(h));
+    const clone=svg.cloneNode(true) as SVGSVGElement,{bounds}=layoutDiagram(project,tab as Sheet);
+    clone.setAttribute("viewBox",[bounds.x,bounds.y,bounds.w,bounds.h].join(" "));clone.setAttribute("width",String(Math.ceil(bounds.w)));clone.setAttribute("height",String(Math.ceil(bounds.h)));
     clone.querySelectorAll('[tabindex]').forEach(el=>el.removeAttribute("tabindex"));
     download(new XMLSerializer().serializeToString(clone),filename(project.name)+"_"+tab+".svg","image/svg+xml");
   };

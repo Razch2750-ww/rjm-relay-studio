@@ -1,16 +1,18 @@
 "use client";
 import { newId } from "../lib/id";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { CATALOG, kind, nodeSize, pin, poles, portPosition, ports } from "../lib/circuit";
-import type { Node, Project, Sheet, Wire } from "../lib/circuit";
+import { layoutDiagram, terminalLabel } from "../lib/diagram-layout";
+import type { Node, Project, Sheet } from "../lib/circuit";
 import { stateOf } from "../lib/simulator";
 import type { Runtime } from "../lib/simulator";
 
 export const PHASE:Record<string,string>={R:"#f38b85",S:"#e4cf68",T:"#d6dce3",N:"#77b3f3",PE:"#a6d782","+":"#ef9287","-":"#80baf0",auto:"#7c8b99",signal:"#afc2d6"};
-export function Symbol({node:n,runtime,mini=false}:{node:Node;runtime?:Runtime;mini?:boolean}){
+export function Symbol({node:n,runtime,mini=false,rotation=0}:{node:Node;runtime?:Runtime;mini?:boolean;rotation?:number}){
   const {width:w,height:h}=nodeSize(n),k=kind(n),s=runtime?stateOf(runtime,n):undefined,on=s?!!s.on:["nc","stop","estop"].includes(k)||!!n.params.on;
   const ink=s?.tripped?"#f38b85":on?"#87e4b0":"#c8d1dd";
   const line=(x1:number,y1:number,x2:number,y2:number,key?:string)=><line key={key} x1={x1} y1={y1} x2={x2} y2={y2}/>;
+  const upright=(x:number,y:number)=>`rotate(${-rotation} ${x} ${y})`;
   const multi=["breaker","fuse","rcd","contactor","overload"].includes(k);
   return <g stroke={ink} fill="none" strokeWidth={2.1} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
     {multi&&Array.from({length:poles(n)},(_,i)=>{
@@ -24,7 +26,7 @@ export function Symbol({node:n,runtime,mini=false}:{node:Node;runtime?:Runtime;m
     {["motor","heater","lamp","buzzer","valve"].includes(k)&&<>
       {ports(n).filter(p=>p.name!=="PE").map(p=>line(p.x,p.y,p.x,p.y===0?30:h-30,p.name))}
       {k==="lamp"&&<><circle cx={w/2} cy={h/2} r={25} fill={on?String(n.params.color??"#73da9b"):"#141c25"} stroke={on?String(n.params.color??"#73da9b"):ink}/><path d={"M"+(w/2-17)+" "+(h/2-17)+"l34 34m0-34-34 34"} stroke={on?"#15251c":ink}/></>}
-      {k==="motor"&&<><circle cx={w/2} cy={h/2} r={29}/><text x={w/2} y={h/2+5} stroke="none" fill={ink} fontSize="23" textAnchor="middle">M{poles(n)===3?"3~":poles(n)===0?"=":"1~"}</text></>}
+      {k==="motor"&&<><circle cx={w/2} cy={h/2} r={29}/><text x={w/2} y={h/2} dominantBaseline="central" transform={upright(w/2,h/2)} stroke="none" fill={ink} fontSize="23" textAnchor="middle">M{poles(n)===3?"3~":poles(n)===0?"=":"1~"}</text></>}
       {k==="heater"&&<><rect x={w/2-29} y={h/2-20} width={58} height={40}/><path d={"M"+(w/2-20)+" "+(h/2)+"h7l5-10 8 20 7-20 5 10h8"}/></>}
       {k==="buzzer"&&<path d={"M"+(w/2-20)+" 30h25v40h-25zm25 6q27 14 0 28"}/>}
       {k==="valve"&&<path d={"M"+(w/2-25)+" 28l50 44V28l-50 44z"}/>}
@@ -32,7 +34,7 @@ export function Symbol({node:n,runtime,mini=false}:{node:Node;runtime?:Runtime;m
     </>}
     {["coil","ton","toff","impulse","cyclic"].includes(k)&&<>
       {line(w/2,0,w/2,32)}{line(w/2,68,w/2,h)}<rect x={w/2-27} y={32} width={54} height={36} fill={on?"#213b32":"#141c25"}/>
-      {k==="coil"?<path d={"M"+(w/2-27)+" 68l54-36"}/>:<text x={w/2} y={56} textAnchor="middle" fill={ink} stroke="none" fontSize="16">{k==="ton"?"t↑":k==="toff"?"t↓":k==="cyclic"?"NC/NO":"↕"}</text>}
+      {k==="coil"?<path d={"M"+(w/2-27)+" 68l54-36"}/>:<text x={w/2} y={50} dominantBaseline="central" transform={upright(w/2,50)} textAnchor="middle" fill={ink} stroke="none" fontSize={rotation%180&&k==="cyclic"?9:16}>{k==="ton"?"t↑":k==="toff"?"t↓":k==="cyclic"?"NC/NO":"↕"}</text>}
     </>}
     {["switch","start","stop","estop","no","nc","pressure","selector","limit","changeover"].includes(k)&&<>
       {ports(n).map(p=>line(p.x,p.y,p.x,p.y===0?28:72,p.name))}
@@ -40,11 +42,11 @@ export function Symbol({node:n,runtime,mini=false}:{node:Node;runtime?:Runtime;m
       {["start","stop","estop"].includes(k)&&<><path d={"M"+(w/2-34)+" 45h25m-25-8v16"} strokeDasharray="4 3"/>{k==="estop"&&<circle cx={w/2-38} cy={45} r={12} fill={runtime?.manual[n.id]?"#cf4e4e":"#813c3d"}/>}</>}
       {k==="nc"||k==="stop"?line(w/2-8,28,w/2+8,28):null}
     </>}
-    {k==="source"&&<><circle cx={w/2} cy={42} r={30}/><text x={w/2} y={48} textAnchor="middle" fontSize="19" fill={ink} stroke="none">{poles(n)===3?"3~":poles(n)===0?"DC":"~"}</text>{ports(n).map(p=>line(p.x,80,p.x,h,p.name))}</>}
-    {k==="pfr"&&<><rect x={15} y={22} width={w-30} height={h-44} rx={2}/><text x={w/2} y={h/2+6} textAnchor="middle" fontSize="21" fill={ink} stroke="none">PFR</text>{ports(n).map(p=>line(p.x,p.y,p.x,p.y===0?22:h-22,p.name))}</>}
+    {k==="source"&&<><circle cx={w/2} cy={42} r={30}/><text x={w/2} y={42} dominantBaseline="central" transform={upright(w/2,42)} textAnchor="middle" fontSize="19" fill={ink} stroke="none">{poles(n)===3?"3~":poles(n)===0?"DC":"~"}</text>{ports(n).map(p=>line(p.x,80,p.x,h,p.name))}</>}
+    {k==="pfr"&&<><rect x={15} y={22} width={w-30} height={h-44} rx={2}/><text x={w/2} y={h/2} dominantBaseline="central" transform={upright(w/2,h/2)} textAnchor="middle" fontSize="21" fill={ink} stroke="none">PFR</text>{ports(n).map(p=>line(p.x,p.y,p.x,p.y===0?22:h-22,p.name))}</>}
     {k==="controller"&&<><rect x={4} y={6} width={w-8} height={100} rx={5} fill="#101920"/>
-      <text x={w/2} y={43} textAnchor="middle" fontSize={mini?"28":"25"} fill={ink} stroke="none" fontFamily="monospace">{s?.on?"TC  "+String(s.stage==="sensor-fault"?"ERR":s.temperature??"—")+" °C":"TC  — —"}</text>
-      <text x={w/2} y={76} textAnchor="middle" fontSize="16" fill={ink} stroke="none">{s?.defrost?"DEFROST":s?.cool?"COMP":s?.on?"STANDBY":"CONTROLLER"}</text>
+      <g transform={upright(w/2,56)}><text x={w/2} y={43} textAnchor="middle" fontSize={mini?28:rotation%180?11:25} fill={ink} stroke="none" fontFamily="monospace">{s?.on?"TC  "+String(s.stage==="sensor-fault"?"ERR":s.temperature??"—")+" °C":"TC  — —"}</text>
+      <text x={w/2} y={76} textAnchor="middle" fontSize={rotation%180?11:16} fill={ink} stroke="none">{s?.defrost?"DEFROST":s?.cool?"COMP":s?.on?"STANDBY":"CONTROLLER"}</text></g>
       {ports(n).map(p=>line(p.x,106,p.x,h,p.name))}</>}
     {k==="probe"&&<><path d={"M"+w/2+" 0v30m0 40v30"}/><rect x={w/2-12} y={30} width={24} height={40}/><path d={"M"+(w/2-20)+" 65l40-30"}/></>}
     {k==="terminal"&&<><path d={"M"+w/2+" 0v100"}/><rect x={w/2-18} y={25} width={36} height={50}/><circle cx={w/2} cy={42} r={5}/><circle cx={w/2} cy={58} r={5}/></>}
@@ -52,19 +54,6 @@ export function Symbol({node:n,runtime,mini=false}:{node:Node;runtime?:Runtime;m
     {k==="bus"&&<><path d={"M"+w/2+" 40V16m-8 0h16l-8-10z"}/></>}
     {k==="text"&&<text x={0} y={40} fontSize="17" fill={ink} stroke="none">{n.label}</text>}
   </g>;
-}
-function bounds(nodes:Node[],wires:Wire[]){
-  const points=nodes.flatMap(n=>[{x:n.x-45,y:n.y-65},{x:n.x+nodeSize(n).width+45,y:n.y+nodeSize(n).height+55}]).concat(wires.flatMap(w=>w.bends));
-  if(!points.length)return {x:0,y:0,w:1200,h:800};
-  const x=Math.min(...points.map(p=>p.x))-35,y=Math.min(...points.map(p=>p.y))-35;
-  return {x,y,w:Math.max(...points.map(p=>p.x))-x+35,h:Math.max(...points.map(p=>p.y))-y+35};
-}
-export function wirePoints(w:Wire,p:Project){
-  const [a,ap]=w.from.split(":"),[b,bp]=w.to.split(":"),na=p.nodes.find(n=>n.id===a),nb=p.nodes.find(n=>n.id===b);
-  if(!na||!nb)return [];
-  const start=portPosition(na,ap),end=portPosition(nb,bp);
-  const mid=(start.y+end.y)/2;
-  return [start,...(w.bends.length?w.bends:[{x:start.x,y:mid},{x:end.x,y:mid}]),end];
 }
 const pathData=(points:{x:number;y:number}[])=>points.map((p,i)=>(i?"L":"M")+p.x+" "+p.y).join(" ");
 export function Schematic({project,sheet,runtime,running,editable,selected,onSelect,onInteract,onEdit,onCheckpoint,adding,onPlaced,canvasAction,printing}:{
@@ -74,14 +63,13 @@ export function Schematic({project,sheet,runtime,running,editable,selected,onSel
 }){
   const svg=useRef<SVGSVGElement>(null),host=useRef<HTMLDivElement>(null),drag=useRef<{id:string;x:number;y:number;nx:number;ny:number;index?:number}|null>(null);
   const [size,setSize]=useState({w:900,h:650}),[view,setView]=useState({x:0,y:0,z:.65}),[pending,setPending]=useState<string|null>(null),[bends,setBends]=useState<{x:number;y:number}[]>([]),[cursor,setCursor]=useState({x:0,y:0});
-  const nodes=project.nodes.filter(n=>n.sheet===sheet),ids=new Set(nodes.map(n=>n.id)),wires=project.wires.filter(w=>ids.has(w.from.split(":")[0]));
-  const box=bounds(nodes,wires);
+  const {nodes,routes,nodeLabels,wireLabels,bounds:box}=useMemo(()=>layoutDiagram(project,sheet),[project,sheet]);
   const fit=()=>setView({x:box.x,y:box.y,z:Math.max(.15,Math.min(1.5,size.w/box.w,size.h/box.h))});
   useEffect(()=>{if(!host.current)return;const observer=new ResizeObserver(entries=>{const r=entries[0].contentRect;setSize({w:r.width,h:r.height});});observer.observe(host.current);return()=>observer.disconnect();},[]);
   const fittedDocument=useRef<string|null>(null);
   // Fit a document once after measurement. Folding panels must preserve camera and pending wires.
   /* eslint-disable react-hooks/set-state-in-effect, react-hooks/exhaustive-deps -- Synchronize the SVG camera only on the command/viewport keys. */
-  useEffect(()=>{const key=project.id+":"+sheet;if(!host.current||!size.w||!size.h||fittedDocument.current===key)return;const rect=host.current.getBoundingClientRect();if(rect.width!==size.w||rect.height!==size.h)return;const ns=project.nodes.filter(n=>n.sheet===sheet),b=bounds(ns,project.wires.filter(w=>ns.some(n=>w.from.startsWith(n.id+":"))));setView({x:b.x,y:b.y,z:Math.max(.15,Math.min(1.5,size.w/b.w,size.h/b.h))});setPending(null);setBends([]);fittedDocument.current=key;},[project.id,sheet,size.w,size.h]); // Changes to diagram data deliberately do not move the camera.
+  useEffect(()=>{const key=project.id+":"+sheet;if(!host.current||!size.w||!size.h||fittedDocument.current===key)return;const rect=host.current.getBoundingClientRect();if(rect.width!==size.w||rect.height!==size.h)return;const b=box;setView({x:b.x,y:b.y,z:Math.max(.15,Math.min(1.5,size.w/b.w,size.h/b.h))});setPending(null);setBends([]);fittedDocument.current=key;},[project.id,sheet,size.w,size.h]); // Changes to diagram data deliberately do not move the camera.
   useEffect(()=>{if(canvasAction.action==="fit")fit();if(canvasAction.action==="in")setView(v=>({...v,z:Math.min(3,v.z*1.25)}));if(canvasAction.action==="out")setView(v=>({...v,z:Math.max(.15,v.z/1.25)}));if(canvasAction.action==="escape"){setPending(null);setBends([]);}},[canvasAction.id]);
   useEffect(()=>{if(running){setPending(null);setBends([]);}},[running]);
   /* eslint-enable react-hooks/set-state-in-effect, react-hooks/exhaustive-deps */
@@ -105,32 +93,36 @@ export function Schematic({project,sheet,runtime,running,editable,selected,onSel
       <defs><pattern id="dot-grid" width="20" height="20" patternUnits="userSpaceOnUse"><circle cx="0" cy="0" r=".8" fill="#33404e"/></pattern></defs>
       <rect x={view.x-2000} y={view.y-2000} width={20000} height={20000} fill="#111922" className="canvas-background"/>
       {!printing&&<rect x={view.x-2000} y={view.y-2000} width={20000} height={20000} fill="url(#dot-grid)" pointerEvents="none"/>}
-      {wires.map(w=>{
-        const phase=runtime.energized[w.from],live=running&&phase&&!["N","PE","-"].includes(phase),points=wirePoints(w,project),path=pathData(points),color=PHASE[live?phase:w.color]??PHASE.auto;
+      {routes.map(({wire:w,points})=>{
+        const phase=runtime.energized[w.from],live=running&&phase&&!["N","PE","-"].includes(phase),label=wireLabels.get(w.id),path=pathData(points),color=PHASE[live?phase:w.color]??PHASE.auto;
         return <g key={w.id} onPointerDown={e=>{e.stopPropagation();onSelect(w.id);}}>
           <path d={path} stroke="transparent" strokeWidth={16} fill="none" style={{cursor:"pointer"}}/>
           <path d={path} stroke={selected===w.id?"#a6b7ff":color} strokeWidth={live?3.1:1.6} opacity={live?1:.78} fill="none" pointerEvents="none"/>
-          {w.label&&points.length>1&&<text x={points[1].x+7} y={points[1].y-8} fill="#deb66d" fontSize="14" fontFamily="monospace" stroke="#111922" strokeWidth="4" paintOrder="stroke">{w.label}</text>}
+          {label&&<text className="wire-annotation" x={label.x+6} y={label.y+17} fill="#deb66d" fontSize="14" fontFamily="monospace">{label.lines.map((line,i)=><tspan key={i} x={label.x+6} dy={i?18:0}>{line}</tspan>)}</text>}
           {selected===w.id&&!running&&w.bends.map((point,i)=><circle key={i} cx={point.x} cy={point.y} r={6} fill="#91a4ff" stroke="#fff" onPointerDown={e=>{e.stopPropagation();if(!editable)return;onCheckpoint();drag.current={id:w.id,x:e.clientX,y:e.clientY,nx:point.x,ny:point.y,index:i};e.currentTarget.setPointerCapture(e.pointerId);}}/>)}
         </g>;
       })}
       {nodes.map(n=>{
-        const s=nodeSize(n),state=stateOf(runtime,n),isSelected=n.id===selected,momentary=["start","stop"].includes(kind(n));
-        return <g key={n.id} transform={"translate("+n.x+" "+n.y+") rotate("+n.rotation+" "+s.width/2+" "+s.height/2+")"} role="button" tabIndex={0} aria-label={n.tag+" "+n.label+(running?" "+(state.tripped?"trip":state.on?"aktif":"tidak aktif"):"")} className="circuit-node"
+        const s=nodeSize(n),state=stateOf(runtime,n),isSelected=n.id===selected,label=nodeLabels.get(n.id)!,momentary=["start","stop"].includes(kind(n));
+        return <g key={n.id} transform={"translate("+n.x+" "+n.y+")"} role="button" tabIndex={0} aria-label={n.tag+" "+n.label+(running?" "+(state.tripped?"trip":state.on?"aktif":"tidak aktif"):"")} className="circuit-node"
           onKeyDown={e=>{if(!e.repeat&&(e.key==="Enter"||e.key===" ")){e.preventDefault();if(running)onInteract(n.id,momentary?true:undefined);else onSelect(n.id);}}}
           onKeyUp={e=>{if(running&&momentary&&(e.key==="Enter"||e.key===" ")){e.preventDefault();onInteract(n.id,false);}}}
           onPointerDown={e=>{e.stopPropagation();onSelect(n.id);if(running){onInteract(n.id,momentary?true:undefined);if(momentary)e.currentTarget.setPointerCapture(e.pointerId);return;}if(editable){onCheckpoint();drag.current={id:n.id,x:e.clientX,y:e.clientY,nx:n.x,ny:n.y};e.currentTarget.setPointerCapture(e.pointerId);}}}
           onPointerUp={e=>{if(running&&momentary){onInteract(n.id,false);e.stopPropagation();}drag.current=null;}}
           onPointerCancel={()=>{if(running&&momentary)onInteract(n.id,false);drag.current=null;}}>
-          <rect x={-12} y={-43} width={s.width+24} height={s.height+79} rx={5} fill={isSelected?"#243454":"#111922"} fillOpacity={isSelected?0.65:0} stroke={isSelected?"#8194f2":"transparent"} strokeDasharray={isSelected?"6 4":undefined} className="node-hit"/>
-          <text x={s.width/2} y={-23} textAnchor="middle" fill={state.tripped?"#f58b82":"#e5ecf5"} fontFamily="monospace" fontSize={18} fontWeight={600}>{n.tag}{running&&state.tripped?" · TRIP":""}</text>
-          <Symbol node={n} runtime={running?runtime:undefined}/>
-          {kind(n)!=="text"&&<text x={s.width/2} y={s.height+27} textAnchor="middle" fill="#a6b2c2" fontSize={14}>{n.label.length>31?n.label.slice(0,29)+"…":n.label}</text>}
-          {ports(n).map(port=><g key={port.name}>
-            <circle cx={port.x} cy={port.y} r={12} fill="transparent" className="terminal-hit" onPointerDown={e=>{e.stopPropagation();connect(pin(n,port.name));}} role="button" tabIndex={!running&&editable?0:-1} aria-label={n.tag+" terminal "+port.name} onKeyDown={e=>{if(e.key==="Enter"){e.stopPropagation();connect(pin(n,port.name));}}}/>
-            <circle cx={port.x} cy={port.y} r={pending===pin(n,port.name)?6:3.5} fill={pending===pin(n,port.name)?"#a8b6ff":"#111922"} stroke={PHASE[runtime.energized[pin(n,port.name)]]??"#adb7c7"} strokeWidth={1.5} pointerEvents="none"/>
-            <text x={port.x+7} y={port.y===0?12:port.y-8} fontSize="12" fontFamily="monospace" fill="#97a8ba" pointerEvents="none">{port.name}</text>
-          </g>)}
+          <g transform={`rotate(${n.rotation} ${s.width/2} ${s.height/2})`}>
+            <rect x={-12} y={-12} width={s.width+24} height={s.height+24} rx={5} fill={isSelected?"#243454":"#111922"} fillOpacity={isSelected?0.3:0} stroke={isSelected?"#8194f2":"transparent"} strokeDasharray={isSelected?"6 4":undefined} className="node-hit"/>
+            {kind(n)!=="text"&&<Symbol node={n} runtime={running?runtime:undefined} rotation={n.rotation}/>}
+            {ports(n).map(port=><g key={port.name}>
+              <circle cx={port.x} cy={port.y} r={12} fill="transparent" className="terminal-hit" onPointerDown={e=>{e.stopPropagation();connect(pin(n,port.name));}} role="button" tabIndex={!running&&editable?0:-1} aria-label={n.tag+" terminal "+port.name} onKeyDown={e=>{if(e.key==="Enter"){e.stopPropagation();connect(pin(n,port.name));}}}/>
+              <circle cx={port.x} cy={port.y} r={pending===pin(n,port.name)?6:3.5} fill={pending===pin(n,port.name)?"#a8b6ff":"#111922"} stroke={PHASE[runtime.energized[pin(n,port.name)]]??"#adb7c7"} strokeWidth={1.5} pointerEvents="none"/>
+            </g>)}
+          </g>
+          <g className="node-annotation">
+            <text x={label.x+label.w/2-n.x} y={label.y+18-n.y} textAnchor="middle" fill={state.tripped?"#f58b82":"#e5ecf5"} fontFamily="monospace" fontSize={18} fontWeight={600}>{n.tag}{running&&state.tripped?" · TRIP":""}</text>
+            <text x={label.x+label.w/2-n.x} y={label.y+38-n.y} textAnchor="middle" fill="#a6b2c2" fontSize={14}>{label.lines.map((line,i)=><tspan key={i} x={label.x+label.w/2-n.x} dy={i?18:0}>{line}</tspan>)}</text>
+          </g>
+          {ports(n).map(port=>{const label=terminalLabel(n,port.name);return <text key={port.name} className="terminal-label" x={label.x-n.x} y={label.y-n.y} textAnchor={label.anchor} fontSize="12" fontFamily="monospace" fill="#97a8ba" pointerEvents="none">{port.name}</text>;})}
         </g>;
       })}
       {start&&<path d={pathData([start,...bends,cursor])} fill="none" stroke="#91a4ff" strokeWidth={2.5} strokeDasharray="8 5" pointerEvents="none"/>}
