@@ -1,4 +1,4 @@
-const CACHE="rjm-relay-shell-v1";
+const CACHE="rjm-relay-shell-v3";
 const validAsset=url=>url.origin===self.location.origin&&/\.(js|css|woff2?|svg)$/.test(url.pathname)&&!url.pathname.startsWith("/api/");
 self.addEventListener("install",event=>event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(["/","/favicon.svg"])).then(()=>self.skipWaiting())));
 self.addEventListener("activate",event=>event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k.startsWith("rjm-relay-shell-")&&k!==CACHE).map(k=>caches.delete(k)))).then(()=>self.clients.claim())));

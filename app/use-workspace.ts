@@ -1,4 +1,5 @@
 "use client";
+import { newId } from "../lib/id";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { z } from "zod";
 import { validateProject } from "../lib/circuit";
@@ -100,7 +101,7 @@ export function useWorkspace(){
       const local=w.entries.find(e=>e.document.id===id)??conflict.local;
       const entries=w.entries.map(e=>e.document.id!==id?e:choice==="local"?{...local,baseRevision:conflict.remote.revision,dirty:true}:entryFromRemote(conflict.remote));
       let active=w.active;
-      if(choice==="copy"){const copy={...local.document,id:crypto.randomUUID(),name:(local.document.name+" · salinan offline").slice(0,120)};entries.push(entry(copy));active=copy.id;}
+      if(choice==="copy"){const copy={...local.document,id:newId(),name:(local.document.name+" · salinan offline").slice(0,120)};entries.push(entry(copy));active=copy.id;}
       return {...w,entries,active};
     });
     setConflicts(cs=>cs.filter(c=>c.local.document.id!==id));

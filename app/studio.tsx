@@ -1,6 +1,7 @@
 "use client";
+import { newId } from "../lib/id";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { CircuitBoard,Play,Pause,RotateCcw,Undo2,Redo2,Download,Upload,FolderOpen,Plus,ZoomIn,ZoomOut,Maximize2,Trash2,Copy,RotateCw,Cloud,WifiOff,Search,FileText,MousePointer2,Cable,Settings2,ShieldAlert,Check,Printer } from "lucide-react";
+import { CircuitBoard,Play,Pause,RotateCcw,Undo2,Redo2,Download,Upload,FolderOpen,Plus,ZoomIn,ZoomOut,Maximize2,Trash2,Copy,RotateCw,Cloud,WifiOff,Search,FileText,MousePointer2,Cable,Settings2,ShieldAlert,Check,Printer,ChevronLeft,ChevronRight,ChevronUp,ChevronDown,Expand,Shrink } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
@@ -25,12 +26,42 @@ function download(content:string,name:string,type="application/json"){
   const url=URL.createObjectURL(new Blob([content],{type})),a=document.createElement("a");a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
 function filename(name:string){return name.replace(/[^a-zA-Z0-9_-]+/g,"_").slice(0,90)||"rangkaian";}
+type PanelSide = "left" | "right" | "top" | "bottom";
+type PanelLayout = Record<PanelSide,boolean>;
+const PANEL_LAYOUT_KEY = "rjm-relay-panel-layout-v1";
+const OPEN_PANELS:PanelLayout = {left:false,right:false,top:false,bottom:false};
+const CLOSED_PANELS:PanelLayout = {left:true,right:true,top:true,bottom:true};
+const PANEL_NAMES = {left:"kiri",right:"kanan",top:"atas",bottom:"bawah"};
+function PanelToggle({side,collapsed,onToggle,rail=false}:{side:PanelSide;collapsed:boolean;onToggle:()=>void;rail?:boolean}){
+  const Icon = side==="left"?(collapsed?ChevronRight:ChevronLeft):side==="right"?(collapsed?ChevronLeft:ChevronRight):side==="top"?(collapsed?ChevronDown:ChevronUp):(collapsed?ChevronUp:ChevronDown);
+  const label = `${collapsed?"Buka":"Minimalkan"} panel ${PANEL_NAMES[side]}`;
+  return <Button variant="ghost" className={"panel-toggle "+(rail&&collapsed?"rail-toggle":"")} aria-label={label} title={label} aria-expanded={!collapsed} aria-controls={`panel-${side}-content`} onClick={onToggle}>
+    <Icon size={17}/>{rail&&collapsed&&<span className="rail-label">{side==="left"?"Komponen":"Properti"}</span>}
+  </Button>;
+}
 export default function Studio(){
   const data=useWorkspace(),project=data.workspace?.entries.find(e=>e.document.id===data.workspace?.active&&!e.deleted)?.document??data.workspace?.entries.find(e=>!e.deleted)?.document;
   const projectRef=useRef(project);useEffect(()=>{projectRef.current=project;},[project]);
   const [tab,setTab]=useState("power"),[selected,setSelected]=useState<string|null>(null),[adding,setAdding]=useState<string|null>(null),[running,setRunning]=useState(false),[runtime,setRuntime]=useState(freshRuntime),[speed,setSpeed]=useState(1),[query,setQuery]=useState(""),[category,setCategory]=useState("Semua"),[desktop,setDesktop]=useState(true);
   const [projectsOpen,setProjectsOpen]=useState(false),[drawerOpen,setDrawerOpen]=useState(false),[confirm,setConfirm]=useState<"node"|"project"|null>(null),[printing,setPrinting]=useState(false);
   const [canvasAction,setCanvasAction]=useState({id:0,action:"fit"}),[history,setHistory]=useState({past:0,future:0});
+  const [collapsedPanels,setCollapsedPanels]=useState<PanelLayout>(OPEN_PANELS),[layoutReady,setLayoutReady]=useState(false);
+  const beforeFocus=useRef<PanelLayout>(OPEN_PANELS);
+  const focusMode=Object.values(collapsedPanels).every(Boolean);
+  const togglePanel=(side:PanelSide)=>setCollapsedPanels(p=>({...p,[side]:!p[side]}));
+  const toggleFocus=()=>{
+    if(focusMode)setCollapsedPanels(beforeFocus.current);
+    else {beforeFocus.current=collapsedPanels;setCollapsedPanels(CLOSED_PANELS);}
+  };
+  // Layout preferences belong to this browser, separately from circuit/project data.
+  useEffect(()=>{
+    try{
+      const saved=JSON.parse(localStorage.getItem(PANEL_LAYOUT_KEY)??"null");
+      if(saved&&typeof saved==="object")setCollapsedPanels({left:saved.left===true,right:saved.right===true,top:saved.top===true,bottom:saved.bottom===true});
+    }catch{}
+    setLayoutReady(true);
+  },[]);
+  useEffect(()=>{if(layoutReady)try{localStorage.setItem(PANEL_LAYOUT_KEY,JSON.stringify(collapsedPanels));}catch{}},[collapsedPanels,layoutReady]);
   const past=useRef<Project[]>([]),future=useRef<Project[]>([]),fileInput=useRef<HTMLInputElement>(null),timer=useRef<ReturnType<typeof setInterval>|null>(null);
   const checkpoint=()=>{if(!projectRef.current)return;past.current.push(structuredClone(projectRef.current));past.current=past.current.slice(-25);future.current=[];setHistory({past:past.current.length,future:0});};
   const edit=(fn:(p:Project)=>void,record=true)=>{const current=projectRef.current;if(!current)return;if(record)checkpoint();const copy=structuredClone(current);fn(copy);data.update(copy);projectRef.current=copy;};
@@ -53,7 +84,7 @@ export default function Studio(){
   useEffect(()=>{
     const key=(e:KeyboardEvent)=>{
       const typing=(e.target as Element)?.closest("input,textarea,select,[contenteditable=true]");
-      if(e.key==="Escape"){setAdding(null);action("escape");}
+      if(e.key==="Escape"){setAdding(null);action("escape");if(focusMode&&!projectsOpen&&!drawerOpen&&!confirm&&!data.conflicts.length)setCollapsedPanels(beforeFocus.current);}
       if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==="s"){e.preventDefault();exportProject();return;}
       if(typing||!desktop)return;
       if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==="z"){e.preventDefault();undo(e.shiftKey);}
@@ -89,7 +120,7 @@ export default function Studio(){
   const importFile=async(file:File)=>{
     if((data.workspace?.entries.length??0)>=90){toast.error("Batas project di perangkat tercapai.");return;}
     if(file.size>2_000_000){toast.error("File maksimal 2 MB.");return;}
-    try{const p=validateProject(JSON.parse(await file.text()));p.id=crypto.randomUUID();p.name=(p.name+" · impor").slice(0,120);data.update(p);reset();toast.success("Diimpor sebagai project baru; versi lama tetap ada.");}catch{toast.error("Bukan file project RJM yang valid. Data lama tidak diubah.");}
+    try{const p=validateProject(JSON.parse(await file.text()));p.id=newId();p.name=(p.name+" · impor").slice(0,120);data.update(p);reset();toast.success("Diimpor sebagai project baru; versi lama tetap ada.");}catch{toast.error("Bukan file project RJM yang valid. Data lama tidak diubah.");}
   };
   const exportSVG=()=>{
     const svg=document.getElementById("circuit-canvas") as SVGSVGElement|null;if(!svg||!project)return;
@@ -133,7 +164,7 @@ export default function Studio(){
       {running&&kind(currentNode)==="source"&&<Choice label="Simulasi fase hilang" value={String(runtime.manual[currentNode.id+":phase"]??"normal")} onChange={v=>setRuntime(r=>stepCircuit(project!,{...r,manual:{...r.manual,[currentNode.id+":phase"]:v}},0))} options={["normal","R","S","T"].map(v=>({value:v,label:v==="normal"?"Semua fase normal":"Hilangkan fase "+v}))}/>}
       {running&&kind(currentNode)==="probe"&&<Button variant="outline" onClick={()=>setRuntime(r=>stepCircuit(project!,{...r,manual:{...r.manual,[currentNode.id+":fault"]:!r.manual[currentNode.id+":fault"]}},0))}>Putus / pulihkan sensor</Button>}
       {running&&!["motor","heater","lamp","buzzer","valve","probe","text","bus","terminal","no","nc","changeover","contactor","coil","ton","toff","impulse","cyclic","junction"].includes(kind(currentNode))&&<Button variant="outline" {...operationEvents(currentNode)}>{kind(currentNode)==="controller"?"Mulai defrost manual":"Operasikan / reset"}</Button>}
-      {!running&&desktop&&<div className="inspector-actions"><Button variant="outline" size="sm" onClick={()=>edit(p=>{p.nodes.find(n=>n.id===selected)!.rotation=(currentNode.rotation+90)%360;})}><RotateCw/>Putar</Button><Button variant="outline" size="sm" onClick={()=>edit(p=>{if(p.nodes.length<500)p.nodes.push({...structuredClone(currentNode),id:crypto.randomUUID(),tag:(currentNode.tag+"-COPY").slice(0,32),x:currentNode.x+160,y:currentNode.y+40});})}><Copy/>Salin</Button><Button variant="outline" size="sm" onClick={()=>setConfirm("node")}><Trash2/>Hapus</Button></div>}
+      {!running&&desktop&&<div className="inspector-actions"><Button variant="outline" size="sm" onClick={()=>edit(p=>{p.nodes.find(n=>n.id===selected)!.rotation=(currentNode.rotation+90)%360;})}><RotateCw/>Putar</Button><Button variant="outline" size="sm" onClick={()=>edit(p=>{if(p.nodes.length<500)p.nodes.push({...structuredClone(currentNode),id:newId(),tag:(currentNode.tag+"-COPY").slice(0,32),x:currentNode.x+160,y:currentNode.y+40});})}><Copy/>Salin</Button><Button variant="outline" size="sm" onClick={()=>setConfirm("node")}><Trash2/>Hapus</Button></div>}
     </>:currentWire?<>
       <h2>Kabel {currentWire.label||"tanpa nomor"}</h2><p className="mono">{currentWire.from}<br/>{currentWire.to}</p>
       <p>{numberText(runtime.wireCurrent[currentWire.id]??0,3)} A · estimasi model</p>
@@ -150,19 +181,22 @@ export default function Studio(){
   if(!project)return <main className="loading-workspace"><CircuitBoard size={34}/><h1>Ruang kerja kosong</h1><Button onClick={()=>addProject("blank")}>Buat project</Button><Button variant="outline" onClick={()=>addProject("jago")}>Buka contoh Jago Coffee</Button><Button variant="outline" onClick={()=>void data.sync(true)}>Muat dari akun</Button></main>;
   const diagram=tab==="power"||tab==="control";
   const matching=Object.entries(CATALOG).filter(([,d])=>(category==="Semua"||d.category===category)&&(d.name+" "+d.category).toLowerCase().includes(query.toLowerCase()));
-  return <main className="studio-shell">
+  return <main className={"studio-shell"+(collapsedPanels.top?" top-collapsed":"")+(collapsedPanels.bottom?" bottom-collapsed":"")+(focusMode?" focus-mode":"")}>
     <Toaster theme="dark" position="bottom-right"/>
-    <header className="app-header"><div className="brand"><span className="brand-mark"><CircuitBoard size={24}/></span><span>RJM <b>Relay Studio</b></span></div>
+    <header className="app-header" id="panel-top-content" hidden={collapsedPanels.top}><div className="brand"><span className="brand-mark"><CircuitBoard size={24}/></span><span>RJM <b>Relay Studio</b></span></div>
       <div className="project-name"><Input aria-label="Nama project" value={project.name} maxLength={120} onChange={e=>{if(e.target.value.trim())edit(p=>{p.name=e.target.value;});}}/><span>Template & rangkaian pribadi</span></div>
       <div className="header-actions"><Button variant="ghost" title="Kelola project" onClick={()=>setProjectsOpen(true)}><FolderOpen/><span>Proyek</span></Button><Button variant="outline" onClick={()=>void data.sync(true)} title={data.status}>{data.online?<Cloud/>:<WifiOff/>}<span>Sinkronkan</span></Button><Button variant="ghost" className="mobile-only" aria-label="Buka inspektor" onClick={()=>setDrawerOpen(true)}><Settings2/></Button></div>
     </header>
     <Tabs value={tab} onValueChange={v=>{setTab(v);setSelected(null);setAdding(null);}} className="studio-tabs">
       <div className="sheet-bar"><TabsList variant="line" className="sheet-tabs">{[["power","Power"],["control","Control"],["panel","Panel uji"],["calc","Hitungan"],["reference","Referensi"]].map(([value,label])=><TabsTrigger key={value} value={value}>{label}</TabsTrigger>)}</TabsList>
-        <div className="run-controls"><Choice label="Kecepatan simulasi" value={String(speed)} onChange={v=>setSpeed(Number(v))} options={[1,5,20].map(v=>({value:String(v),label:v+"×"}))}/><Button variant="ghost" title="Reset simulasi" aria-label="Reset simulasi" onClick={reset}><RotateCcw size={18}/></Button><Button className={running?"pause-button":"run-button"} onClick={()=>{setAdding(null);if(!running)setRuntime(r=>stepCircuit(project,r,0));setRunning(v=>!v);}}>{running?<Pause size={17}/>:<Play size={17}/>} {running?"Jeda":"Jalankan"}</Button></div>
+        <div className="sheet-controls"><div className="run-controls"><Choice label="Kecepatan simulasi" value={String(speed)} onChange={v=>setSpeed(Number(v))} options={[1,5,20].map(v=>({value:String(v),label:v+"×"}))}/><Button variant="ghost" title="Reset simulasi" aria-label="Reset simulasi" onClick={reset}><RotateCcw size={18}/></Button><Button className={running?"pause-button":"run-button"} onClick={()=>{setAdding(null);if(!running)setRuntime(r=>stepCircuit(project,r,0));setRunning(v=>!v);}}>{running?<Pause size={17}/>:<Play size={17}/>} {running?"Jeda":"Jalankan"}</Button></div>
+          <div className="layout-controls"><PanelToggle side="top" collapsed={collapsedPanels.top} onToggle={()=>togglePanel("top")}/><Button variant="ghost" className="focus-toggle" aria-label={focusMode?"Keluar mode fokus":"Mode fokus"} aria-pressed={focusMode} title={focusMode?"Kembalikan panel (Esc)":"Minimalkan semua panel"} onClick={toggleFocus}>{focusMode?<Shrink size={17}/>:<Expand size={17}/>}<span>{focusMode?"Keluar fokus":"Fokus"}</span></Button></div>
+        </div>
       </div>
       <div className="workspace-layout">
-        <aside className={"component-palette "+(!diagram?"non-diagram":"")}>
-          <div className="palette-heading"><h2>Komponen</h2><span>{Object.keys(CATALOG).length}</span></div>
+        <aside className={"component-palette "+(!diagram?"non-diagram ":"")+(collapsedPanels.left?"panel-collapsed":"")}>
+          <div className="palette-heading"><h2>Komponen</h2><span>{Object.keys(CATALOG).length}</span><PanelToggle side="left" collapsed={collapsedPanels.left} onToggle={()=>togglePanel("left")} rail/></div>
+          <div className="palette-content" id="panel-left-content" hidden={collapsedPanels.left}>
           <div className="search-field"><Search size={16}/><Input aria-label="Cari komponen" placeholder="Cari komponen…" value={query} onChange={e=>setQuery(e.target.value)}/></div>
           <Choice label="Kategori komponen" value={category} onChange={setCategory} options={["Semua",...CATEGORIES].map(v=>({value:v,label:v}))}/>
           <div className="palette-scroll">{CATEGORIES.filter(c=>matching.some(([,d])=>d.category===c)).map(c=><section key={c}><h3><i style={{background:CATEGORY_COLORS[CATEGORIES.indexOf(c)]}}/>{c}</h3><div className="component-grid">
@@ -172,6 +206,7 @@ export default function Studio(){
             })}
           </div></section>)}</div>
           <div className="palette-bottom"><span>Kabel & label bebas</span><small>Undo Ctrl+Z · putar R</small></div>
+          </div>
         </aside>
         <section className="main-workspace">
           {diagram&&<div className="drawing-toolbar"><div><Button size="sm" variant="ghost" className={!adding?"active-tool":""} onClick={()=>{setAdding(null);action("escape");}}><MousePointer2 size={16}/><span>Pilih</span></Button><span className="wire-hint"><Cable size={16}/>Klik dua terminal</span><span className="toolbar-divider"/><Button size="icon" variant="ghost" aria-label="Undo" disabled={!history.past||running||!desktop} onClick={()=>undo(false)}><Undo2 size={17}/></Button><Button size="icon" variant="ghost" aria-label="Redo" disabled={!history.future||running||!desktop} onClick={()=>undo(true)}><Redo2 size={17}/></Button></div><div><Button size="icon" variant="ghost" aria-label="Zoom keluar" onClick={()=>action("out")}><ZoomOut size={17}/></Button><Button size="icon" variant="ghost" aria-label="Zoom masuk" onClick={()=>action("in")}><ZoomIn size={17}/></Button><Button size="icon" variant="ghost" aria-label="Tampilkan seluruh rangkaian" onClick={()=>action("fit")}><Maximize2 size={17}/></Button><Button size="sm" variant="ghost" title="Unduh SVG" onClick={exportSVG}><Download size={16}/><span>SVG</span></Button><Button size="icon" variant="ghost" aria-label="Cetak ke PDF" onClick={()=>{setPrinting(true);setTimeout(()=>window.print(),100);}}><Printer size={17}/></Button></div></div>}
@@ -196,18 +231,23 @@ export default function Studio(){
             <h3>Yang dihitung dan yang tidak</h3><p>Engine menyelesaikan koneksi sumber, kabel, kontak, coil dan beban. Arus beban memakai nilai nameplate/input, bukan solver analog. Jalur arus memakai satu jalur konduktif; pembagian arus pada kabel paralel, impedansi sumber, transien motor, arcing, termodinamika refrigerant, serta koordinasi proteksi nyata tidak dimodelkan.</p><p>Model trip arus lebih bersifat pembelajaran. Hubung singkat ideal menghentikan simulasi dan tidak menghasilkan nilai arus palsu. Data tidak lengkap ditandai, bukan disetujui otomatis.</p>
             <h3>Penyimpanan</h3><p>Data offline berada di browser perangkat ini. Gunakan Unduh project sebagai cadangan. Sinkronisasi memerlukan sesi akun ChatGPT yang didukung host. Versi standalone saat ini memakai penyimpanan server sementara: data server hilang ketika proses restart. Gunakan ekspor JSON untuk cadangan permanen. Data dua akun berbeda tidak digabung otomatis. Konflik diselesaikan per project; opsi salinan mempertahankan kedua versi.</p>
           </TabsContent>
-          {tab!=="calc"&&tab!=="reference"&&<section className="simulation-tray">
+          <section className="simulation-tray" id="panel-bottom-content" hidden={collapsedPanels.bottom||tab==="calc"||tab==="reference"}>
             <div className="simulation-heading"><span className={"run-dot "+(running?"live":"")}/><b>{runtime.halted?"Simulasi dihentikan":running?"Simulasi berjalan":"Simulasi jeda"}</b><span className="mono">{numberText(runtime.now,1)} s</span><span className="muted">Beban diketahui {numberText(runtime.watts/1000,2)} kW</span></div>
             <div className="simulation-columns"><div className="test-inputs">{project.nodes.filter(n=>kind(n)==="probe").map(n=><Numeric key={n.id} label={n.label} unit="°C" value={runtime.values[n.id+":value"]??Number(n.params.value)} min={-100} max={100} onChange={value=>setRuntime(r=>stepCircuit(project,{...r,values:{...r.values,[n.id+":value"]:value}},0))}/>)}
               <div className="fault-buttons">{project.nodes.filter(n=>["overload","pfr","pressure"].includes(kind(n))).map(n=><Button key={n.id} size="sm" variant="outline" disabled={!running} className={stateOf(runtime,n).tripped?"fault-button":""} onClick={()=>runInteraction(n.id)}>{n.tag} {kind(n)==="overload"?(stateOf(runtime,n).tripped?"Reset":"Trip"):kind(n)==="pressure"?"HP/LP":"Fault"}</Button>)}</div></div>
               <div className="event-log" aria-label="Diagnostik dan riwayat">{runtime.faults.map(x=><p className="error-text" key={x}><ShieldAlert size={14}/>{x}</p>)}{runtime.warnings.slice(0,5).map(x=><p className="warning-text" key={x}>{x}</p>)}{runtime.log.slice(-5).reverse().map((x,i)=><p key={i}><time>{numberText(x.time,1)}s</time>{x.text}</p>)}{!runtime.log.length&&!runtime.faults.length&&<p>Klik Jalankan, lalu coba tombol atau ubah suhu sensor.</p>}</div>
             </div>
-          </section>}
+          </section>
         </section>
-        <aside className="inspector"><div className="inspector-heading"><h2>Properti</h2><Settings2 size={16}/></div>{inspector}</aside>
+        <aside className={"inspector "+(collapsedPanels.right?"panel-collapsed":"")}><div className="inspector-heading"><h2>Properti</h2><PanelToggle side="right" collapsed={collapsedPanels.right} onToggle={()=>togglePanel("right")} rail/></div><div id="panel-right-content" hidden={collapsedPanels.right}>{inspector}</div></aside>
       </div>
     </Tabs>
-    <footer className="status-bar"><span>{data.online?<Cloud size={14}/>:<WifiOff size={14}/>}<span role="status">{data.status}</span></span><span>{data.offlineReady?"Offline siap":"Offline belum terverifikasi"}<i/>Model edukasi · v1</span><div><Button variant="ghost" size="sm" onClick={()=>fileInput.current?.click()}><Upload size={14}/>Impor</Button><Button variant="ghost" size="sm" onClick={exportProject}><Download size={14}/>Unduh project</Button></div></footer>
+    <footer className="status-bar">
+      <span>{collapsedPanels.bottom?<><span className={"run-dot "+(running?"live":"")}/><span className={runtime.halted?"error-text":""}>{runtime.halted?"Simulasi dihentikan":running?"Simulasi berjalan":"Simulasi jeda"} · {numberText(runtime.now,1)} s{runtime.faults.length?` · ${runtime.faults.length} gangguan`:""}</span></>:<>{data.online?<Cloud size={14}/>:<WifiOff size={14}/>}<span role="status">{data.status}</span></>}</span>
+      <span className="status-details" hidden={collapsedPanels.bottom}>{data.offlineReady?"Offline siap":"Offline belum terverifikasi"}<i/>Model edukasi · v1</span>
+      <div className="status-details" hidden={collapsedPanels.bottom}><Button variant="ghost" size="sm" onClick={()=>fileInput.current?.click()}><Upload size={14}/>Impor</Button><Button variant="ghost" size="sm" onClick={exportProject}><Download size={14}/>Unduh project</Button></div>
+      <div className="bottom-panel-control">{collapsedPanels.bottom&&<span>Diagnostik</span>}<PanelToggle side="bottom" collapsed={collapsedPanels.bottom} onToggle={()=>togglePanel("bottom")}/></div>
+    </footer>
     <input ref={fileInput} type="file" hidden accept=".json,.rjm.json,application/json" onChange={e=>{const file=e.target.files?.[0];if(file)void importFile(file);e.target.value="";}}/>
     {data.conflicts.length>0&&<Dialog open><DialogContent showCloseButton={false} className="project-dialog"><DialogHeader><DialogTitle>Ada dua versi project</DialogTitle><DialogDescription>Tidak ada versi yang ditimpa otomatis. Pilih cara menyimpan perubahan.</DialogDescription></DialogHeader>{data.conflicts.map(c=><div key={c.local.document.id} className="conflict-row"><h3>{c.local.document.name}</h3><p>Lokal: {new Date(c.local.updatedAt).toLocaleString("id-ID")} · akun: {new Date(c.remote.updatedAt).toLocaleString("id-ID")}</p><p>{c.local.document.nodes.length} komponen lokal / {c.remote.document.nodes.length} komponen akun{c.remote.deleted?" · versi akun dihapus":""}</p><div className="dialog-actions"><Button onClick={()=>data.resolve(c.local.document.id,"copy")}>Simpan keduanya</Button><Button variant="outline" onClick={()=>data.resolve(c.local.document.id,"local")}>Pakai lokal</Button><Button variant="outline" onClick={()=>data.resolve(c.local.document.id,"remote")}>Pakai akun</Button></div></div>)}</DialogContent></Dialog>}
     <Dialog open={projectsOpen} onOpenChange={setProjectsOpen}><DialogContent className="project-dialog"><DialogHeader><DialogTitle>Project lo</DialogTitle><DialogDescription>Setiap rangkaian disimpan terpisah. Contoh tidak menimpa pekerjaan yang sudah ada.</DialogDescription></DialogHeader><div className="project-list">{data.workspace.entries.filter(e=>!e.deleted).map(e=><button key={e.document.id} onClick={()=>{data.setWorkspace(w=>w?{...w,active:e.document.id}:w);setProjectsOpen(false);}}><CircuitBoard/><span><b>{e.document.name}</b><small>{e.document.nodes.length} komponen · {e.dirty?"Belum sinkron":"Versi "+e.baseRevision}</small></span>{e.document.id===project.id&&<Check size={18}/>}</button>)}</div><div className="new-project-actions"><Button onClick={()=>addProject("blank")}><Plus/>Kosong</Button></div><h3>Mulai dari wiring proyek</h3><div className="preset-list">{PROJECT_PRESETS.map(p=><button key={p.id} onClick={()=>addProject(p.id)}><b>{p.name}</b><small>{p.description}</small></button>)}</div><Button variant="ghost" onClick={()=>setConfirm("project")}><Trash2 size={16}/>Hapus project aktif</Button></DialogContent></Dialog>

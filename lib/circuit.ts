@@ -1,3 +1,4 @@
+import { newId } from "./id.ts";
 import { z } from "zod";
 
 export type Params = Record<string, string | number | boolean>;
@@ -146,8 +147,8 @@ export function validateProject(input: unknown): Project {
 }
 export function newNode(type: string, sheet: Sheet, x: number, y: number, tag: string): Node {
   if (!Object.hasOwn(CATALOG,type)) throw new Error("Jenis komponen tidak dikenal.");
-  return { id:crypto.randomUUID(),type,sheet,x:Math.min(10000,Math.max(0,Math.round(x/20)*20)),y:Math.min(10000,Math.max(0,Math.round(y/20)*20)),rotation:0,tag,label:CATALOG[type].name,params:{...CATALOG[type].defaults} };
+  return { id:newId(),type,sheet,x:Math.min(10000,Math.max(0,Math.round(x/20)*20)),y:Math.min(10000,Math.max(0,Math.round(y/20)*20)),rotation:0,tag,label:CATALOG[type].name,params:{...CATALOG[type].defaults} };
 }
 export function blankProject(name = "Rangkaian baru"): Project {
-  return {format:"rjm-relay-studio",version:1,id:crypto.randomUUID(),name,notes:"",nodes:[],wires:[],calculation:{...defaultCalculation}};
+  return {format:"rjm-relay-studio",version:1,id:newId(),name,notes:"",nodes:[],wires:[],calculation:{...defaultCalculation}};
 }

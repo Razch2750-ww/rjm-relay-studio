@@ -1,4 +1,5 @@
 "use client";
+import { newId } from "../lib/id";
 import { useEffect, useRef, useState } from "react";
 import { CATALOG, kind, nodeSize, pin, poles, portPosition, ports } from "../lib/circuit";
 import type { Node, Project, Sheet, Wire } from "../lib/circuit";
@@ -77,9 +78,10 @@ export function Schematic({project,sheet,runtime,running,editable,selected,onSel
   const box=bounds(nodes,wires);
   const fit=()=>setView({x:box.x,y:box.y,z:Math.max(.15,Math.min(1.5,size.w/box.w,size.h/box.h))});
   useEffect(()=>{if(!host.current)return;const observer=new ResizeObserver(entries=>{const r=entries[0].contentRect;setSize({w:r.width,h:r.height});});observer.observe(host.current);return()=>observer.disconnect();},[]);
-  // Camera responds to viewport/document changes and toolbar commands; edits must not reset zoom/pan.
+  const fittedDocument=useRef<string|null>(null);
+  // Fit a document once after measurement. Folding panels must preserve camera and pending wires.
   /* eslint-disable react-hooks/set-state-in-effect, react-hooks/exhaustive-deps -- Synchronize the SVG camera only on the command/viewport keys. */
-  useEffect(()=>{const ns=project.nodes.filter(n=>n.sheet===sheet),b=bounds(ns,project.wires.filter(w=>ns.some(n=>w.from.startsWith(n.id+":"))));setView({x:b.x,y:b.y,z:Math.max(.15,Math.min(1.5,size.w/b.w,size.h/b.h))});setPending(null);setBends([]);},[project.id,sheet,size.w,size.h]); // Changes to diagram data deliberately do not move the camera.
+  useEffect(()=>{const key=project.id+":"+sheet;if(!host.current||!size.w||!size.h||fittedDocument.current===key)return;const rect=host.current.getBoundingClientRect();if(rect.width!==size.w||rect.height!==size.h)return;const ns=project.nodes.filter(n=>n.sheet===sheet),b=bounds(ns,project.wires.filter(w=>ns.some(n=>w.from.startsWith(n.id+":"))));setView({x:b.x,y:b.y,z:Math.max(.15,Math.min(1.5,size.w/b.w,size.h/b.h))});setPending(null);setBends([]);fittedDocument.current=key;},[project.id,sheet,size.w,size.h]); // Changes to diagram data deliberately do not move the camera.
   useEffect(()=>{if(canvasAction.action==="fit")fit();if(canvasAction.action==="in")setView(v=>({...v,z:Math.min(3,v.z*1.25)}));if(canvasAction.action==="out")setView(v=>({...v,z:Math.max(.15,v.z/1.25)}));if(canvasAction.action==="escape"){setPending(null);setBends([]);}},[canvasAction.id]);
   useEffect(()=>{if(running){setPending(null);setBends([]);}},[running]);
   /* eslint-enable react-hooks/set-state-in-effect, react-hooks/exhaustive-deps */
@@ -88,7 +90,7 @@ export function Schematic({project,sheet,runtime,running,editable,selected,onSel
     if(!editable||running)return;
     if(!pending){setPending(to);setBends([]);return;}
     if(pending!==to&&!project.wires.some(w=>(w.from===pending&&w.to===to)||(w.to===pending&&w.from===to)))
-      onEdit(p=>{if(p.wires.length<2000)p.wires.push({id:crypto.randomUUID(),from:pending,to,label:"",color:"auto",bends});});
+      onEdit(p=>{if(p.wires.length<2000)p.wires.push({id:newId(),from:pending,to,label:"",color:"auto",bends});});
     setPending(null);setBends([]);
   };
   const start=pending?(()=>{const [id,port]=pending.split(":");const n=project.nodes.find(n=>n.id===id);return n?portPosition(n,port):null;})():null;
