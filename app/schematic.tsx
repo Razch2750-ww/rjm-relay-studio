@@ -116,16 +116,7 @@ export function Schematic({project,sheet,runtime,running,editable,selected,onSel
           <path className="wire-conductor" d={path} stroke={color} strokeWidth={width} strokeOpacity={live?.45:1} fill="none" pointerEvents="none"/>
           {live&&<path className="wire-current" d={path} stroke={color} strokeWidth={width} strokeDasharray="10 16" fill="none" pointerEvents="none"/>}
           {label&&<text className="wire-annotation" transform={label.rotation?`translate(${label.x+label.w} ${label.y}) rotate(90)`:`translate(${label.x} ${label.y})`} x={6} y={17} fill="#c0cbd5" fontSize="14" fontFamily="monospace">{label.lines.map((line,i)=><tspan key={i} x={6} dy={i?18:0}>{line}</tspan>)}</text>}
-          {selected===w.id&&!running&&!printing&&editable&&points.slice(1,-2).map((point,j)=>{
-            const i=j+1,next=points[i+1],vertical=Math.abs(point.x-next.x)<.001,mid={x:(point.x+next.x)/2,y:(point.y+next.y)/2};
-            if(Math.hypot(next.x-point.x,next.y-point.y)<12)return null;
-            return <g key={i} className="wire-handle" role="button" tabIndex={0} aria-label={`Geser ruas ${i} kabel ${w.label||w.id}`} style={{cursor:vertical?"ew-resize":"ns-resize"}}
-              onPointerDown={e=>{e.stopPropagation();onCheckpoint();drag.current={id:w.id,x:e.clientX,y:e.clientY,nx:mid.x,ny:mid.y,index:i,points};e.currentTarget.setPointerCapture(e.pointerId);}}
-              onKeyDown={e=>{const offsets:Record<string,Point>={ArrowLeft:{x:-12,y:0},ArrowRight:{x:12,y:0},ArrowUp:{x:0,y:-12},ArrowDown:{x:0,y:12}};const offset=offsets[e.key];if(!offset)return;e.preventDefault();e.stopPropagation();onEdit(p=>{p.wires.find(wire=>wire.id===w.id)!.bends=moveWireSegment(points,i,{x:mid.x+offset.x,y:mid.y+offset.y}).slice(1,-1);});}}>
-              <rect x={mid.x-12/view.z} y={mid.y-12/view.z} width={24/view.z} height={24/view.z} fill="transparent"/>
-              <rect x={mid.x-4/view.z} y={mid.y-4/view.z} width={8/view.z} height={8/view.z} rx={1/view.z} fill="#101923" stroke="#95c9ff" strokeWidth={1.5/view.z}/><title>{vertical?"Geser kiri / kanan":"Geser atas / bawah"}</title>
-            </g>;
-          })}
+
         </g>;
       })}
       {!printing&&guides.guideX!==undefined&&<line x1={guides.guideX} x2={guides.guideX} y1={view.y} y2={view.y+size.h/view.z} stroke="#488ab6" strokeWidth={1/view.z} strokeDasharray="5 5" pointerEvents="none"/>}
@@ -156,6 +147,18 @@ export function Schematic({project,sheet,runtime,running,editable,selected,onSel
         </g>;
       })}
       {start&&<path d={pathData(orthogonalPoints([start,...bends,cursor]))} fill="none" stroke="#91a4ff" strokeWidth={2.5} strokeDasharray="8 5" pointerEvents="none"/>}
+      <g className="wire-edit-handles">{routes.filter(r=>r.wire.id===selected).map(({wire:w,points})=><g key={w.id}>
+        {selected===w.id&&!running&&!printing&&editable&&points.slice(1,-2).map((point,j)=>{
+            const i=j+1,next=points[i+1],vertical=Math.abs(point.x-next.x)<.001,mid={x:(point.x+next.x)/2,y:(point.y+next.y)/2};
+            if(Math.hypot(next.x-point.x,next.y-point.y)<12)return null;
+            return <g key={i} className="wire-handle" role="button" tabIndex={0} aria-label={`Geser ruas ${i} kabel ${w.label||w.id}`} style={{cursor:vertical?"ew-resize":"ns-resize"}}
+              onPointerDown={e=>{e.stopPropagation();onCheckpoint();drag.current={id:w.id,x:e.clientX,y:e.clientY,nx:mid.x,ny:mid.y,index:i,points};e.currentTarget.setPointerCapture(e.pointerId);}}
+              onKeyDown={e=>{const offsets:Record<string,Point>={ArrowLeft:{x:-12,y:0},ArrowRight:{x:12,y:0},ArrowUp:{x:0,y:-12},ArrowDown:{x:0,y:12}};const offset=offsets[e.key];if(!offset)return;e.preventDefault();e.stopPropagation();onEdit(p=>{p.wires.find(wire=>wire.id===w.id)!.bends=moveWireSegment(points,i,{x:mid.x+offset.x,y:mid.y+offset.y}).slice(1,-1);});}}>
+              <rect x={mid.x-12/view.z} y={mid.y-12/view.z} width={24/view.z} height={24/view.z} fill="transparent"/>
+              <rect x={mid.x-4/view.z} y={mid.y-4/view.z} width={8/view.z} height={8/view.z} rx={1/view.z} fill="#101923" stroke="#95c9ff" strokeWidth={1.5/view.z}/><title>{vertical?"Geser kiri / kanan":"Geser atas / bawah"}</title>
+            </g>;
+          })}
+      </g>)}</g>
       {!nodes.length&&<text x={100} y={180} fill="#9caec2" fontSize="25">Pilih komponen, lalu klik area gambar.</text>}
     </svg>
     {!printing&&nodes.length>15&&<button className="diagram-minimap" aria-label="Navigasi minimap" onClick={e=>{const rect=e.currentTarget.getBoundingClientRect(),x=box.x+(e.clientX-rect.left)/rect.width*box.w,y=box.y+(e.clientY-rect.top)/rect.height*box.h;setView(v=>({...v,x:x-size.w/v.z/2,y:y-size.h/v.z/2}));}}><svg viewBox={`${box.x} ${box.y} ${box.w} ${box.h}`}><rect x={box.x} y={box.y} width={box.w} height={box.h} fill="#000000"/>{routes.map(r=><g key={r.wire.id}>{conductorPhases.get(r.wire.id)==="T"&&<path d={pathData(r.points)} stroke="#53606a" strokeWidth={11} fill="none"/>}<path d={pathData(r.points)} stroke={PHASE[conductorPhases.get(r.wire.id)??"auto"]} strokeWidth={7} fill="none"/></g>)}{nodes.map(n=><rect key={n.id} x={n.x} y={n.y} width={nodeSize(n).width} height={nodeSize(n).height} fill="#566c7d"/>)}<rect x={view.x} y={view.y} width={size.w/view.z} height={size.h/view.z} fill="#2f74a3" fillOpacity={.15} stroke="#2f74a3" strokeWidth={10}/></svg></button>}
