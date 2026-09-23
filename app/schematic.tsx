@@ -2,16 +2,19 @@
 import { newId } from "../lib/id";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { CATALOG, kind, nodeSize, pin, poles, portPosition, ports,defaultCable,number } from "../lib/circuit";
+import { orthogonalPoints,moveWireSegment } from "../lib/wire-routing";
+import type { Point } from "../lib/wire-routing";
 import { layoutDiagram, terminalLabel,alignNode } from "../lib/diagram-layout";
 import type { Node, Project, Sheet } from "../lib/circuit";
 import { stateOf } from "../lib/simulator";
 import type { Runtime } from "../lib/simulator";
+import { cableSizingMode } from "../lib/cable-sizing";
 import { WIRE_COLORS as PHASE,wirePhases } from "../lib/wire-colors";
 
 export { WIRE_COLORS as PHASE } from "../lib/wire-colors";
 export function Symbol({node:n,runtime,mini=false,rotation=0}:{node:Node;runtime?:Runtime;mini?:boolean;rotation?:number}){
   const {width:w,height:h}=nodeSize(n),k=kind(n),s=runtime?stateOf(runtime,n):undefined,on=s?!!s.on:["nc","stop","estop"].includes(k)||!!n.params.on;
-  const ink=s?.tripped?"#c12f34":runtime&&on?"#20834e":mini?"#c8d1dd":"#283a49";
+  const ink=s?.tripped?"#c12f34":runtime&&on?"#70dfa2":mini?"#c8d1dd":"#cbd5df";
   const line=(x1:number,y1:number,x2:number,y2:number,key?:string)=><line key={key} x1={x1} y1={y1} x2={x2} y2={y2}/>;
   const upright=(x:number,y:number)=>`rotate(${-rotation} ${x} ${y})`;
   const multi=["breaker","fuse","rcd","contactor","overload"].includes(k);
@@ -26,7 +29,7 @@ export function Symbol({node:n,runtime,mini=false,rotation=0}:{node:Node;runtime
     {k==="overload"&&[150,195].map((x,i)=><g key={x}>{line(x,0,x,48)}{line(x,92,x,h)}{line(x,92,((i===0&&!s?.tripped)||(i===1&&s?.tripped))?x:x+15,48)}</g>)}
     {["motor","heater","lamp","buzzer","valve"].includes(k)&&<>
       {ports(n).filter(p=>p.name!=="PE").map(p=>line(p.x,p.y,p.x,p.y===0?30:h-30,p.name))}
-      {k==="lamp"&&<><circle cx={w/2} cy={h/2} r={25} fill={runtime&&on?String(n.params.color??"#73da9b"):mini?"#141c25":"#f1f4f6"} stroke={on?String(n.params.color??"#73da9b"):ink}/><path d={"M"+(w/2-17)+" "+(h/2-17)+"l34 34m0-34-34 34"} stroke={on?"#15251c":ink}/></>}
+      {k==="lamp"&&<><circle cx={w/2} cy={h/2} r={25} fill={runtime&&on?String(n.params.color??"#73da9b"):mini?"#141c25":"#101419"} stroke={on?String(n.params.color??"#73da9b"):ink}/><path d={"M"+(w/2-17)+" "+(h/2-17)+"l34 34m0-34-34 34"} stroke={on?"#15251c":ink}/></>}
       {k==="motor"&&<><circle cx={w/2} cy={h/2} r={29}/><text x={w/2} y={h/2} dominantBaseline="central" transform={upright(w/2,h/2)} stroke="none" fill={ink} fontSize="23" textAnchor="middle">M{poles(n)===3?"3~":poles(n)===0?"=":"1~"}</text></>}
       {k==="heater"&&<><rect x={w/2-29} y={h/2-20} width={58} height={40}/><path d={"M"+(w/2-20)+" "+(h/2)+"h7l5-10 8 20 7-20 5 10h8"}/></>}
       {k==="buzzer"&&<path d={"M"+(w/2-20)+" 30h25v40h-25zm25 6q27 14 0 28"}/>}
@@ -34,7 +37,7 @@ export function Symbol({node:n,runtime,mini=false,rotation=0}:{node:Node;runtime
       {(k==="motor"||k==="heater")&&<>{line(w/2,h-18,w/2,h)}<path d={"M"+(w/2-10)+" "+(h-18)+"h20m-16-5h12"}/></>}
     </>}
     {["coil","ton","toff","impulse","cyclic","schedule","interval"].includes(k)&&<>
-      {line(w/2,0,w/2,32)}{line(w/2,68,w/2,h)}<rect x={w/2-27} y={32} width={54} height={36} fill={runtime&&on?"#def1e4":mini?"#141c25":"#f9fafb"}/>
+      {line(w/2,0,w/2,32)}{line(w/2,68,w/2,h)}<rect x={w/2-27} y={32} width={54} height={36} fill={runtime&&on?"#153326":mini?"#141c25":"#101419"}/>
       {k==="coil"?<path d={"M"+(w/2-27)+" 68l54-36"}/>:<text x={w/2} y={50} dominantBaseline="central" transform={upright(w/2,50)} textAnchor="middle" fill={ink} stroke="none" fontSize={rotation%180&&k==="cyclic"?9:16}>{k==="ton"?"t↑":k==="toff"?"t↓":k==="cyclic"?"NC/NO":k==="schedule"?"24h":k==="interval"?"t‖":"↕"}</text>}
     </>}
     {["switch","start","stop","estop","no","nc","pressure","selector","limit","changeover"].includes(k)&&<>
@@ -45,7 +48,7 @@ export function Symbol({node:n,runtime,mini=false,rotation=0}:{node:Node;runtime
     </>}
     {k==="source"&&<><circle cx={w/2} cy={42} r={30}/><text x={w/2} y={42} dominantBaseline="central" transform={upright(w/2,42)} textAnchor="middle" fontSize="19" fill={ink} stroke="none">{poles(n)===3?"3~":poles(n)===0?"DC":"~"}</text>{ports(n).map(p=>line(p.x,80,p.x,h,p.name))}</>}
     {k==="pfr"&&<><rect x={15} y={22} width={w-30} height={h-44} rx={2}/><text x={w/2} y={h/2} dominantBaseline="central" transform={upright(w/2,h/2)} textAnchor="middle" fontSize="21" fill={ink} stroke="none">PFR</text>{ports(n).map(p=>line(p.x,p.y,p.x,p.y===0?22:h-22,p.name))}</>}
-    {k==="controller"&&<><rect x={4} y={6} width={w-8} height={100} rx={3} fill={mini?"#101920":"#f0f3f5"}/>
+    {k==="controller"&&<><rect x={4} y={6} width={w-8} height={100} rx={3} fill={mini?"#101920":"#101419"}/>
       <g transform={upright(w/2,56)}><text x={w/2} y={43} textAnchor="middle" fontSize={mini?28:rotation%180?11:25} fill={ink} stroke="none" fontFamily="monospace">{s?.on?"TC  "+String(s.stage==="sensor-fault"?"ERR":s.temperature??"—")+" °C":"TC  — —"}</text>
       <text x={w/2} y={76} textAnchor="middle" fontSize={rotation%180?11:16} fill={ink} stroke="none">{s?.defrost?"DEFROST":s?.cool?"COMP":s?.on?"STANDBY":"CONTROLLER"}</text></g>
       {ports(n).map(p=>line(p.x,106,p.x,h,p.name))}</>}
@@ -64,12 +67,12 @@ export function Schematic({project,sheet,runtime,running,editable,selected,onSel
   onInteract:(id:string,pressed?:boolean)=>void;onEdit:(fn:(p:Project)=>void,record?:boolean)=>void;onCheckpoint:()=>void;
   adding:string|null;onPlaced:(type:string,x:number,y:number)=>void;canvasAction:{id:number;action:string};printing:boolean;debug?:boolean;
 }){
-  const svg=useRef<SVGSVGElement>(null),host=useRef<HTMLDivElement>(null),drag=useRef<{id:string;x:number;y:number;nx:number;ny:number;index?:number}|null>(null);
+  const svg=useRef<SVGSVGElement>(null),host=useRef<HTMLDivElement>(null),drag=useRef<{id:string;x:number;y:number;nx:number;ny:number;index?:number;points?:Point[]}|null>(null);
   const [size,setSize]=useState({w:900,h:650}),[view,setView]=useState({x:0,y:0,z:.65}),[pending,setPending]=useState<string|null>(null),[bends,setBends]=useState<{x:number;y:number}[]>([]),[cursor,setCursor]=useState({x:0,y:0});
   const space=useRef(false);
   const [guides,setGuides]=useState<{guideX?:number;guideY?:number}>({});
   useEffect(()=>{const down=(e:KeyboardEvent)=>{if(e.code==="Space"&&!(e.target as Element)?.closest("input,textarea,select,button,[contenteditable=true]")&&!(running&&(e.target as Element)?.closest(".circuit-node"))){space.current=true;e.preventDefault();}},up=()=>{space.current=false;};window.addEventListener("keydown",down);window.addEventListener("keyup",up);window.addEventListener("blur",up);return()=>{window.removeEventListener("keydown",down);window.removeEventListener("keyup",up);window.removeEventListener("blur",up);};},[running]);
-  const {nodes,routes,nodeLabels,wireLabels,bounds:box}=useMemo(()=>layoutDiagram(project,sheet),[project,sheet]);
+  const {nodes,routes,nodeLabels,wireLabels,bounds:box,routingConflicts}=useMemo(()=>layoutDiagram(project,sheet),[project,sheet]);
   const conductorPhases=useMemo(()=>wirePhases(project),[project]);
   const fit=()=>setView({x:box.x,y:box.y,z:Math.max(.15,Math.min(1.5,size.w/box.w,size.h/box.h))});
   useEffect(()=>{if(!host.current)return;const observer=new ResizeObserver(entries=>{const r=entries[0].contentRect;setSize({w:r.width,h:r.height});});observer.observe(host.current);return()=>observer.disconnect();},[]);
@@ -86,7 +89,7 @@ export function Schematic({project,sheet,runtime,running,editable,selected,onSel
     if(!editable||running)return;
     if(!pending){setPending(to);setBends([]);return;}
     if(pending!==to&&!project.wires.some(w=>(w.from===pending&&w.to===to)||(w.to===pending&&w.from===to)))
-      onEdit(p=>{let label=1;const labels=new Set(p.wires.map(w=>w.label));while(labels.has(String(label)))label++;if(p.wires.length<2000)p.wires.push({id:newId(),from:pending,to,label:String(label),color:"auto",bends,cable:{...defaultCable}});});
+      onEdit(p=>{let label=1;const labels=new Set(p.wires.map(w=>w.label));while(labels.has(String(label)))label++;if(p.wires.length<2000)p.wires.push({id:newId(),from:pending,to,label:String(label),color:"auto",bends,cable:{...defaultCable,sizing:"auto"}});});
     setPending(null);setBends([]);
   };
   const start=pending?(()=>{const [id,port]=pending.split(":");const n=project.nodes.find(n=>n.id===id);return n?portPosition(n,port):null;})():null;
@@ -96,23 +99,33 @@ export function Schematic({project,sheet,runtime,running,editable,selected,onSel
       viewBox={printing?[box.x,box.y,box.w,box.h].join(" "):[view.x,view.y,size.w/view.z,size.h/view.z].join(" ")}
       onWheel={e=>{e.preventDefault();const point=world(e.clientX,e.clientY),r=svg.current!.getBoundingClientRect();const z=Math.max(.15,Math.min(3,view.z*(e.deltaY<0?1.12:1/1.12)));setView({x:point.x-(e.clientX-r.left)/z,y:point.y-(e.clientY-r.top)/z,z});}}
       onPointerDown={e=>{if(e.button!==0&&e.button!==1)return;const point=world(e.clientX,e.clientY);if(adding&&editable&&!running&&!space.current&&e.button!==1){onPlaced(adding,point.x,point.y);return;}if(pending&&!space.current&&e.button!==1){setBends(b=>[...b,{x:Math.round(point.x/20)*20,y:Math.round(point.y/20)*20}]);return;}drag.current={id:"@pan",x:e.clientX,y:e.clientY,nx:view.x,ny:view.y};e.currentTarget.setPointerCapture(e.pointerId);onSelect(null);}}
-      onPointerMove={e=>{const point=world(e.clientX,e.clientY);setCursor(point);const d=drag.current;if(!d)return;if(d.id==="@pan"){setView(v=>({...v,x:d.nx-(e.clientX-d.x)/v.z,y:d.ny-(e.clientY-d.y)/v.z}));return;}if(running||!editable)return;onEdit(p=>{if(d.index!==undefined){const wire=p.wires.find(w=>w.id===d.id);if(wire)wire.bends[d.index]={x:Math.round(point.x/20)*20,y:Math.round(point.y/20)*20};}else{const n=p.nodes.find(n=>n.id===d.id);if(n){const aligned=alignNode(n,d.nx+(e.clientX-d.x)/view.z,d.ny+(e.clientY-d.y)/view.z,p.nodes);n.x=aligned.x;n.y=aligned.y;setGuides(aligned);}}},false);}}
+      onPointerMove={e=>{const point=world(e.clientX,e.clientY);setCursor(point);const d=drag.current;if(!d)return;if(d.id==="@pan"){setView(v=>({...v,x:d.nx-(e.clientX-d.x)/v.z,y:d.ny-(e.clientY-d.y)/v.z}));return;}if(running||!editable)return;onEdit(p=>{if(d.index!==undefined){const wire=p.wires.find(w=>w.id===d.id);if(wire&&d.points)wire.bends=moveWireSegment(d.points,d.index,point).slice(1,-1);}else{const n=p.nodes.find(n=>n.id===d.id);if(n){const aligned=alignNode(n,d.nx+(e.clientX-d.x)/view.z,d.ny+(e.clientY-d.y)/view.z,p.nodes);n.x=aligned.x;n.y=aligned.y;setGuides(aligned);}}},false);}}
       onPointerUp={()=>{drag.current=null;setGuides({});}} onPointerCancel={()=>{drag.current=null;setGuides({});}}>
-      <defs><pattern id="dot-grid" width="20" height="20" patternUnits="userSpaceOnUse"><circle cx="0" cy="0" r=".8" fill="#b8c2cc"/></pattern></defs>
-      <rect x={view.x-2000} y={view.y-2000} width={20000} height={20000} fill="#f7f9fa" className="canvas-background"/>
+      <defs><pattern id="dot-grid" width="20" height="20" patternUnits="userSpaceOnUse"><circle cx="0" cy="0" r=".8" fill="#29333d"/></pattern></defs>
+      <rect x={view.x-2000} y={view.y-2000} width={20000} height={20000} fill="#000000" className="canvas-background"/>
       {!printing&&<rect x={view.x-2000} y={view.y-2000} width={20000} height={20000} fill="url(#dot-grid)" pointerEvents="none"/>}
       {routes.map(({wire:w,points})=>{
-        const potential=runtime.energized[w.from],live=running&&potential&&!["N","PE","-"].includes(potential),phase=conductorPhases.get(w.id)??"auto",label=wireLabels.get(w.id),path=pathData(points),color=PHASE[phase],width=live?3.2:2.2;
-        return <g key={w.id} data-wire={w.id} data-phase={phase} onPointerDown={e=>{if(space.current||e.button===1)return;e.stopPropagation();onSelect(w.id);}}>
-          <title>{`Kabel ${w.label||w.id} · ${phase==="auto"?"fase belum diketahui":phase}${debug?` · ${w.from} → ${w.to} · ${runtime.energized[w.from]??"floating"} · ${(runtime.wireCurrent[w.id]??0).toFixed(3)} A · ${w.cable?.section??"?"} mm² · ${(runtime.cables[w.id]?.temperature??30).toFixed(1)} °C`:""}`}</title>
+        const live=running&&Math.abs(runtime.wireCurrent[w.id]??0)>.00001,phase=conductorPhases.get(w.id)??"auto",label=wireLabels.get(w.id),path=pathData(points),color=PHASE[phase],width=live?3.2:2.2;
+        return <g key={w.id} data-wire={w.id} data-phase={phase} data-flowing={live?"true":"false"} onPointerDown={e=>{if(space.current||e.button===1)return;e.stopPropagation();onSelect(w.id);}}>
+          <title>{`Kabel ${w.label||w.id} · ${phase==="auto"?"fase belum diketahui":phase} · ${cableSizingMode(w)==="auto"?"Ukuran otomatis":"Ukuran manual"}${debug?` · ${w.from} → ${w.to} · ${runtime.energized[w.from]??"floating"} · ${(runtime.wireCurrent[w.id]??0).toFixed(3)} A · ${w.cable?.section??"?"} mm² · ${(runtime.cables[w.id]?.temperature??30).toFixed(1)} °C`:""}`}</title>
           <path d={path} stroke="transparent" strokeWidth={16} fill="none" style={{cursor:"pointer"}}/>
-          <path d={path} stroke="#f7f9fa" strokeWidth={width+6} fill="none" pointerEvents="none"/>
+          <path d={path} stroke="#000000" strokeWidth={width+6} fill="none" pointerEvents="none"/>
           {selected===w.id&&<path d={path} stroke="#78add4" strokeWidth={width+4} fill="none" pointerEvents="none"/>}
           {runtime.injected[w.id+":short"]&&<path d={path} stroke="#c33636" strokeWidth={width+4} strokeDasharray="9 6" fill="none" pointerEvents="none"/>}
           {["S","T"].includes(phase)&&<path d={path} stroke="#53606a" strokeWidth={width+1.4} fill="none" pointerEvents="none"/>}
-          <path className="wire-conductor" d={path} stroke={color} strokeWidth={width} fill="none" pointerEvents="none"/>
-          {label&&<text className="wire-annotation" x={label.x+6} y={label.y+17} fill="#566676" fontSize="14" fontFamily="monospace">{label.lines.map((line,i)=><tspan key={i} x={label.x+6} dy={i?18:0}>{line}</tspan>)}</text>}
-          {selected===w.id&&!running&&w.bends.map((point,i)=><circle key={i} cx={point.x} cy={point.y} r={6} fill="#91a4ff" stroke="#fff" onPointerDown={e=>{e.stopPropagation();if(!editable)return;onCheckpoint();drag.current={id:w.id,x:e.clientX,y:e.clientY,nx:point.x,ny:point.y,index:i};e.currentTarget.setPointerCapture(e.pointerId);}}/>)}
+          <path className="wire-conductor" d={path} stroke={color} strokeWidth={width} strokeOpacity={live?.45:1} fill="none" pointerEvents="none"/>
+          {live&&<path className="wire-current" d={path} stroke={color} strokeWidth={width} strokeDasharray="10 16" fill="none" pointerEvents="none"/>}
+          {label&&<text className="wire-annotation" transform={label.rotation?`translate(${label.x+label.w} ${label.y}) rotate(90)`:`translate(${label.x} ${label.y})`} x={6} y={17} fill="#c0cbd5" fontSize="14" fontFamily="monospace">{label.lines.map((line,i)=><tspan key={i} x={6} dy={i?18:0}>{line}</tspan>)}</text>}
+          {selected===w.id&&!running&&!printing&&editable&&points.slice(1,-2).map((point,j)=>{
+            const i=j+1,next=points[i+1],vertical=Math.abs(point.x-next.x)<.001,mid={x:(point.x+next.x)/2,y:(point.y+next.y)/2};
+            if(Math.hypot(next.x-point.x,next.y-point.y)<12)return null;
+            return <g key={i} className="wire-handle" role="button" tabIndex={0} aria-label={`Geser ruas ${i} kabel ${w.label||w.id}`} style={{cursor:vertical?"ew-resize":"ns-resize"}}
+              onPointerDown={e=>{e.stopPropagation();onCheckpoint();drag.current={id:w.id,x:e.clientX,y:e.clientY,nx:mid.x,ny:mid.y,index:i,points};e.currentTarget.setPointerCapture(e.pointerId);}}
+              onKeyDown={e=>{const offsets:Record<string,Point>={ArrowLeft:{x:-12,y:0},ArrowRight:{x:12,y:0},ArrowUp:{x:0,y:-12},ArrowDown:{x:0,y:12}};const offset=offsets[e.key];if(!offset)return;e.preventDefault();e.stopPropagation();onEdit(p=>{p.wires.find(wire=>wire.id===w.id)!.bends=moveWireSegment(points,i,{x:mid.x+offset.x,y:mid.y+offset.y}).slice(1,-1);});}}>
+              <rect x={mid.x-12/view.z} y={mid.y-12/view.z} width={24/view.z} height={24/view.z} fill="transparent"/>
+              <rect x={mid.x-4/view.z} y={mid.y-4/view.z} width={8/view.z} height={8/view.z} rx={1/view.z} fill="#101923" stroke="#95c9ff" strokeWidth={1.5/view.z}/><title>{vertical?"Geser kiri / kanan":"Geser atas / bawah"}</title>
+            </g>;
+          })}
         </g>;
       })}
       {!printing&&guides.guideX!==undefined&&<line x1={guides.guideX} x2={guides.guideX} y1={view.y} y2={view.y+size.h/view.z} stroke="#488ab6" strokeWidth={1/view.z} strokeDasharray="5 5" pointerEvents="none"/>}
@@ -131,20 +144,21 @@ export function Schematic({project,sheet,runtime,running,editable,selected,onSel
             {kind(n)!=="text"&&<Symbol node={n} runtime={running?runtime:undefined} rotation={n.rotation}/>}
             {ports(n).map(port=><g key={port.name}>
               <circle cx={port.x} cy={port.y} r={12} fill="transparent" className="terminal-hit" onPointerDown={e=>{if(space.current||e.button===1)return;e.stopPropagation();connect(pin(n,port.name));}} role="button" tabIndex={!running&&editable?0:-1} aria-label={n.tag+" terminal "+port.name} onKeyDown={e=>{if(e.key==="Enter"){e.stopPropagation();connect(pin(n,port.name));}}}/>
-              <circle cx={port.x} cy={port.y} r={pending===pin(n,port.name)?6:3.5} fill={pending===pin(n,port.name)?"#4f79a5":"#f7f9fa"} stroke={running&&runtime.energized[pin(n,port.name)]?"#258251":"#7b8e9e"} strokeWidth={1.5} pointerEvents="none"/>
+              <circle cx={port.x} cy={port.y} r={pending===pin(n,port.name)?6:3.5} fill={pending===pin(n,port.name)?"#4f79a5":"#000000"} stroke={running&&runtime.energized[pin(n,port.name)]?"#258251":"#7b8e9e"} strokeWidth={1.5} pointerEvents="none"/>
             </g>)}
           </g>
           <g className="node-annotation">
-            <text x={label.x+label.w/2-n.x} y={label.y+18-n.y} textAnchor="middle" fill={running&&state.tripped?"#b9262e":"#223440"} fontFamily="monospace" fontSize={18} fontWeight={600}>{n.tag}{running&&state.tripped?" · TRIP":""}</text>
-            <text x={label.x+label.w/2-n.x} y={label.y+38-n.y} textAnchor="middle" fill="#506273" fontSize={14}>{label.lines.map((line,i)=><tspan key={i} x={label.x+label.w/2-n.x} dy={i?18:0}>{line}</tspan>)}</text>
+            <text x={label.x+label.w/2-n.x} y={label.y+18-n.y} textAnchor="middle" fill={running&&state.tripped?"#ff7c82":"#eef4fa"} fontFamily="monospace" fontSize={18} fontWeight={600}>{n.tag}{running&&state.tripped?" · TRIP":""}</text>
+            <text x={label.x+label.w/2-n.x} y={label.y+38-n.y} textAnchor="middle" fill="#b3c1ce" fontSize={14}>{label.lines.map((line,i)=><tspan key={i} x={label.x+label.w/2-n.x} dy={i?18:0}>{line}</tspan>)}</text>
+            {label.amperage&&<text className="component-amperage" x={label.x+label.w/2-n.x} y={label.y+38+label.lines.length*18-n.y} textAnchor="middle" fill="#90c9ec" fontSize={14} fontFamily="monospace">{label.amperage}</text>}
           </g>
-          {ports(n).map(port=>{const label=terminalLabel(n,port.name);return <text key={port.name} className="terminal-label" x={label.x-n.x} y={label.y-n.y} textAnchor={label.anchor} fontSize="12" fontFamily="monospace" fill="#54697b" pointerEvents="none">{port.name}</text>;})}
+          {ports(n).map(port=>{const label=terminalLabel(n,port.name);return <text key={port.name} className="terminal-label" x={label.x-n.x} y={label.y-n.y} textAnchor={label.anchor} fontSize="12" fontFamily="monospace" fill="#9cadbd" pointerEvents="none">{port.name}</text>;})}
         </g>;
       })}
-      {start&&<path d={pathData([start,...bends,cursor])} fill="none" stroke="#91a4ff" strokeWidth={2.5} strokeDasharray="8 5" pointerEvents="none"/>}
+      {start&&<path d={pathData(orthogonalPoints([start,...bends,cursor]))} fill="none" stroke="#91a4ff" strokeWidth={2.5} strokeDasharray="8 5" pointerEvents="none"/>}
       {!nodes.length&&<text x={100} y={180} fill="#9caec2" fontSize="25">Pilih komponen, lalu klik area gambar.</text>}
     </svg>
-    {!printing&&nodes.length>15&&<button className="diagram-minimap" aria-label="Navigasi minimap" onClick={e=>{const rect=e.currentTarget.getBoundingClientRect(),x=box.x+(e.clientX-rect.left)/rect.width*box.w,y=box.y+(e.clientY-rect.top)/rect.height*box.h;setView(v=>({...v,x:x-size.w/v.z/2,y:y-size.h/v.z/2}));}}><svg viewBox={`${box.x} ${box.y} ${box.w} ${box.h}`}><rect x={box.x} y={box.y} width={box.w} height={box.h} fill="#f7f9fa"/>{routes.map(r=><g key={r.wire.id}>{conductorPhases.get(r.wire.id)==="T"&&<path d={pathData(r.points)} stroke="#53606a" strokeWidth={11} fill="none"/>}<path d={pathData(r.points)} stroke={PHASE[conductorPhases.get(r.wire.id)??"auto"]} strokeWidth={7} fill="none"/></g>)}{nodes.map(n=><rect key={n.id} x={n.x} y={n.y} width={nodeSize(n).width} height={nodeSize(n).height} fill="#566c7d"/>)}<rect x={view.x} y={view.y} width={size.w/view.z} height={size.h/view.z} fill="#2f74a3" fillOpacity={.15} stroke="#2f74a3" strokeWidth={10}/></svg></button>}
-    {!printing&&<div className="canvas-caption"><span>{pending?"Klik terminal tujuan · klik area kosong untuk belokan · Esc batal":adding?"Klik untuk menempatkan "+CATALOG[adding].name:running?"Klik sakelar untuk menguji · tahan push button":editable?"Tarik komponen · klik terminal untuk menyambung":"Mode lihat & simulasi · edit dari PC/laptop"}</span><span>{Math.round(view.z*100)}%</span></div>}
+    {!printing&&nodes.length>15&&<button className="diagram-minimap" aria-label="Navigasi minimap" onClick={e=>{const rect=e.currentTarget.getBoundingClientRect(),x=box.x+(e.clientX-rect.left)/rect.width*box.w,y=box.y+(e.clientY-rect.top)/rect.height*box.h;setView(v=>({...v,x:x-size.w/v.z/2,y:y-size.h/v.z/2}));}}><svg viewBox={`${box.x} ${box.y} ${box.w} ${box.h}`}><rect x={box.x} y={box.y} width={box.w} height={box.h} fill="#000000"/>{routes.map(r=><g key={r.wire.id}>{conductorPhases.get(r.wire.id)==="T"&&<path d={pathData(r.points)} stroke="#53606a" strokeWidth={11} fill="none"/>}<path d={pathData(r.points)} stroke={PHASE[conductorPhases.get(r.wire.id)??"auto"]} strokeWidth={7} fill="none"/></g>)}{nodes.map(n=><rect key={n.id} x={n.x} y={n.y} width={nodeSize(n).width} height={nodeSize(n).height} fill="#566c7d"/>)}<rect x={view.x} y={view.y} width={size.w/view.z} height={size.h/view.z} fill="#2f74a3" fillOpacity={.15} stroke="#2f74a3" strokeWidth={10}/></svg></button>}
+    {!printing&&<div className="canvas-caption"><span>{routingConflicts.length?`${routingConflicts.length} jalur terhalang di terminal. Geser komponen yang bertumpuk atau rapikan belokan.`:pending?"Klik terminal tujuan · klik area kosong untuk belokan · Esc batal":adding?"Klik untuk menempatkan "+CATALOG[adding].name:running?"Klik sakelar untuk menguji · tahan push button":editable?(selected&&project.wires.some(w=>w.id===selected)?"Tarik pegangan ruas · belokan tetap 90° · AUTO? = data belum lengkap":"Tarik komponen · klik terminal untuk menyambung"):"Mode lihat & simulasi · edit dari PC/laptop"}</span><span>{Math.round(view.z*100)}%</span></div>}
   </div>;
 }

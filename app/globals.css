@@ -161,7 +161,7 @@ input[type=color] { padding: 4px; }
 .toolbar-divider { height: 18px; border-right: 1px solid var(--border); margin: 0 4px; }
 .diagram-panel { display: flex; flex: 1; min-height: 0; margin: 0; overflow: hidden; }
 .diagram-panel[data-state=inactive] { display: none; }
-.canvas-host { flex: 1; position: relative; min-width: 0; min-height: 0; background: #0e151e; overflow: hidden; }
+.canvas-host { flex: 1; position: relative; min-width: 0; min-height: 0; background: #000; overflow: hidden; }
 .canvas-host > svg { width: 100%; height: 100%; position: absolute; inset: 0; touch-action: none; user-select: none; cursor: grab; }
 .canvas-host > svg:active { cursor: grabbing; }
 .canvas-host.placing > svg { cursor: crosshair; }
@@ -408,11 +408,11 @@ textarea { border: 1px solid #40516a; background: #0f1823; border-radius: 5px; p
 .sheet-tools { display:flex; align-items:center; gap:6px; padding:2px 10px; border-bottom:1px solid var(--border); flex:0 0 auto; }
 .sheet-tools button { height:26px; font-size:11px; }
 .sheet-tools input { width:180px; height:26px; font-size:12px; }
-.canvas-host { background:#f7f9fa; }
-.canvas-caption { color:#435868; }
-.canvas-caption span { background:#f7f9faf2; border-color:#bdc9d3; }
-.inspector-symbol { background:#f1f4f6; border-radius:3px; }
-.diagram-minimap { position:absolute; right:14px; bottom:55px; width:145px; height:96px; background:#f7f9fa; border:1px solid #a2b3c0; padding:4px; border-radius:2px; }
+.canvas-host { background:#000; }
+.canvas-caption { color:#b7c7d5; }
+.canvas-caption span { background:#101820ee; border-color:#354b60; }
+.inspector-symbol { background:#000; border-radius:3px; }
+.diagram-minimap { position:absolute; right:14px; bottom:55px; width:145px; height:96px; background:#000; border:1px solid #445b6e; padding:4px; border-radius:2px; }
 .diagram-minimap svg { width:100%; height:100%; }
 .engineering-surface { padding:22px 26px 48px; background:#f5f7f9; color:#263b4c; min-height:100%; --background:#f5f7f9; --foreground:#263b4c; --input:#c4ced6; --border:#c4ced6; --primary:#304c61; --primary-foreground:#ffffff; --muted:#e9eef2; --muted-foreground:#5a6e7d; --accent:#e5edf3; --accent-foreground:#253e51; }
 .engineering-surface h2 { font-size:19px; font-weight:600; letter-spacing:-.25px; }
@@ -479,3 +479,14 @@ progress { display:inline-block; width:60px; height:7px; accent-color:#3f8b69; m
 @media(max-width:1100px){.sheet-bar{padding-inline:10px;gap:6px}.sheet-tabs button{padding-inline:9px;font-size:12px}.engineering-surface{padding:18px}.panel-designer-layout{grid-template-columns:190px minmax(0,1fr);gap:15px}.drawing-toolbar>div{flex-wrap:wrap}.drawing-toolbar{min-height:unset}}
 @media(max-width:700px){.engineering-surface{padding:14px 12px 36px}.engineering-title h2{font-size:16px}.engineering-title>button{font-size:11px}.panel-designer-layout{grid-template-columns:1fr}.layout-properties{display:none}.engineering-metrics{grid-template-columns:repeat(4,minmax(0,1fr))}.engineering-metrics>div{padding:10px 7px}.engineering-metrics strong{font-size:13px}.engineering-form{grid-template-columns:1fr}.engineering-nav button{padding:8px 10px}.diagnostic-row{gap:7px;flex-wrap:wrap}.engineering-event-log button{flex-wrap:wrap;gap:5px}.sheet-tabs{justify-content:flex-start}.diagram-minimap{width:100px;height:65px;bottom:75px}.drawing-toolbar .wire-hint{display:none}.sheet-tools{overflow:auto;white-space:nowrap}.canvas-caption span{max-width:85%}}
 @media print{body{background:white!important}.sheet-tools,.diagram-minimap,.layout-properties,.engineering-nav,.engineering-title>button{display:none!important}.engineering-surface{padding:0;background:white}.panel-designer-layout{display:block}.physical-panel-scroll{padding:0;border:0;overflow:visible}.physical-panel-scroll>svg{min-width:0;max-height:250mm}.engineering-table-wrap{overflow:visible}.scroll-panel{overflow:visible!important}.engineering-surface button{color:#17212b}.engineering-metrics,.scenario-list article{break-inside:avoid}}
+
+/* The electrical sheet stays black; phase identity is constant while dashes indicate current. */
+.wire-current { animation: cable-current-flow 1s linear infinite; }
+@keyframes cable-current-flow { to { stroke-dashoffset: -26; } }
+.wire-handle:focus-visible { outline: none; }
+.wire-handle:focus-visible rect:last-of-type { stroke: #fff; stroke-width: 3px; }
+.cable-sizing-summary { display: grid; gap: 7px; padding: 12px; border: 1px solid #3f566a; background: #101820; color: #c9d9e6; font-size: 12px; line-height: 1.5; }
+.cable-sizing-summary strong { color: #d5eeff; font-size: 13px; }
+.cable-sizing-summary .sizing-note { color: #e7c88a; }
+@media (prefers-reduced-motion: reduce) { .wire-current { animation: none; } }
+@media print { .wire-current { animation: none; } .wire-handle { display: none; } }

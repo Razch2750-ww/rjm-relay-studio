@@ -1,15 +1,16 @@
 import { CATALOG,kind,number,ports,pin } from "./circuit.ts";
 import type { Project,SimulationRecord } from "./circuit.ts";
 import type { Runtime } from "./simulator.ts";
-import { nominalCurrent } from "./engine/load.ts";
+import { componentAmperage,cableSizingMode,sizeProjectCables } from "./cable-sizing.ts";
 export type ReportTable={title:string;columns:string[];rows:(string|number)[][]};
 export function terminalName(p:Project,id:string){const [node,port]=id.split(":"),n=p.nodes.find(n=>n.id===node);return n?n.tag+"-"+port:id;}
 export function schedules(p:Project,r:Runtime):ReportTable[]{
+ const sizing=sizeProjectCables(p).recommendations;
  const groups=new Map<string,typeof p.nodes>();for(const n of p.nodes)if(kind(n)!=="text")groups.set(n.tag,[...(groups.get(n.tag)??[]),n]);
- const bom=[...groups].map(([tag,nodes],i)=>{const n=nodes.find(n=>!(["coil","no","nc","changeover"].includes(kind(n))))??nodes[0];return [i+1,tag,CATALOG[n.type].name,String(n.params.brand??"Custom"),String(n.params.model??""),`${number(n,"voltage")} V · ${number(n,"rating",nominalCurrent(n).current).toFixed(2)} A`,1,n.label];});
- const cables=p.wires.map((w,i)=>{const c=w.cable,s=r.cables[w.id];return [w.label||i+1,terminalName(p,w.from),terminalName(p,w.to),c?`${c.material} ${c.section} mm² ${c.insulation}`:"Belum diisi",c?.cores??"",c?.length??"",(r.wireCurrent[w.id]??0).toFixed(3),(s?.protection??[]).map(id=>p.nodes.find(n=>n.id===id)?.tag).join(", "),s?.drop.toFixed(3)??"",s?.status??"Belum diuji"];});
+ const bom=[...groups].map(([tag,nodes],i)=>{const n=nodes.find(n=>!(["coil","no","nc","changeover"].includes(kind(n))))??nodes[0];return [i+1,tag,CATALOG[n.type].name,String(n.params.brand??"Custom"),String(n.params.model??""),`${number(n,"voltage")} V · ${componentAmperage(n)??"—"}`,1,n.label];});
+ const cables=p.wires.map((w,i)=>{const c=w.cable,s=r.cables[w.id];return [w.label||i+1,terminalName(p,w.from),terminalName(p,w.to),c?`${c.material} ${c.section} mm² ${c.insulation}`:"Belum diisi",c?.cores??"",c?.length??"",(r.wireCurrent[w.id]??0).toFixed(3),(s?.protection??[]).map(id=>p.nodes.find(n=>n.id===id)?.tag).join(", "),s?.drop.toFixed(3)??"",s?.status??"Belum diuji",cableSizingMode(w)==="auto"?"Otomatis":"Manual",sizing.get(w.id)?.current.toFixed(3)??"",sizing.get(w.id)?.messages.join(" · ")??""];});
  const terminals=p.nodes.flatMap(n=>ports(n).map(t=>{const wires=p.wires.filter(w=>w.from===pin(n,t.name)||w.to===pin(n,t.name));return [n.tag+"-"+t.name,n.label,wires.map(w=>terminalName(p,w.from===pin(n,t.name)?w.to:w.from)).join(", "),wires.map(w=>w.label||w.id).join(", "),r.energized[pin(n,t.name)]??"Floating",n.sheet];}));
- return [{title:"Bill of Material",columns:["No","Tag","Komponen","Brand","Model","Rating","Qty","Keterangan"],rows:bom},{title:"Cable Schedule",columns:["No kabel","From","To","Spesifikasi","Core","m","Arus A","Proteksi","Drop V","Status"],rows:cables},{title:"Terminal Schedule",columns:["Terminal","Fungsi","Terhubung ke","No kabel","Potensial","Sheet"],rows:terminals}];
+ return [{title:"Bill of Material",columns:["No","Tag","Komponen","Brand","Model","Rating","Qty","Keterangan"],rows:bom},{title:"Cable Schedule",columns:["No kabel","From","To","Spesifikasi","Core","m","Arus A","Proteksi","Drop V","Status","Mode ukuran","Ib desain A","Catatan ukuran"],rows:cables},{title:"Terminal Schedule",columns:["Terminal","Fungsi","Terhubung ke","No kabel","Potensial","Sheet"],rows:terminals}];
 }
 export const escapeText=(v:unknown)=>String(v).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&apos;"}[c]!));
 export function excelWorkbook(tables:ReportTable[]){

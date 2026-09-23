@@ -4,7 +4,7 @@ import { z } from "zod";
 export type Params = Record<string, string | number | boolean>;
 export type Sheet = "power" | "control" | `sheet-${string}`;
 export type Node = { id: string; type: string; tag: string; label: string; x: number; y: number; rotation: number; sheet: Sheet; params: Params };
-export type Cable = { material:"Cu"|"Al"; section:number; length:number; cores:number; insulation:"PVC"|"XLPE"; ambient:number; method:"A2"|"B2"|"C"; grouping:number; mode:"simple"|"advanced"; ampacity:number; resistance:number };
+export type Cable = { material:"Cu"|"Al"; section:number; length:number; cores:number; insulation:"PVC"|"XLPE"; ambient:number; method:"A2"|"B2"|"C"; grouping:number; mode:"simple"|"advanced"; ampacity:number; resistance:number; sizing?:"auto"|"manual" };
 export const defaultCable:Cable={material:"Cu",section:2.5,length:10,cores:3,insulation:"PVC",ambient:30,method:"B2",grouping:1,mode:"advanced",ampacity:0,resistance:0};
 export type Wire = { id: string; from: string; to: string; label: string; color: string; bends: { x: number; y: number }[]; cable?:Cable };
 export type PanelPlacement={id:string;nodeId:string;x:number;y:number;width:number;height:number;rotation:number;kind:"device"|"rail"|"duct"};
@@ -164,7 +164,7 @@ export const calculationSchema = z.object({
 }).strict();
 const point = z.object({x:finite.min(-2000).max(12000),y:finite.min(-2000).max(12000)}).strict();
 const sheetSchema=z.string().refine(v=>v==="power"||v==="control"||/^sheet-[a-zA-Z0-9_-]{1,60}$/.test(v));
-const cableSchema=z.object({material:z.enum(["Cu","Al"]),section:finite.gt(0).max(1000),length:positive,cores:finite.int().min(1).max(100),insulation:z.enum(["PVC","XLPE"]),ambient:finite.min(-20).max(90),method:z.enum(["A2","B2","C"]),grouping:finite.gt(0).max(1),mode:z.enum(["simple","advanced"]),ampacity:positive,resistance:positive}).strict();
+const cableSchema=z.object({material:z.enum(["Cu","Al"]),section:finite.gt(0).max(1000),length:positive,cores:finite.int().min(1).max(100),insulation:z.enum(["PVC","XLPE"]),ambient:finite.min(-20).max(90),method:z.enum(["A2","B2","C"]),grouping:finite.gt(0).max(1),mode:z.enum(["simple","advanced"]),ampacity:positive,resistance:positive,sizing:z.enum(["auto","manual"]).optional()}).strict();
 const panelSchema=z.object({width:finite.min(100).max(5000),height:finite.min(100).max(5000),items:z.array(z.object({id,nodeId:z.string().max(80),x:finite,y:finite,width:finite.gt(0).max(5000),height:finite.gt(0).max(5000),rotation:z.union([z.literal(0),z.literal(90),z.literal(180),z.literal(270)]),kind:z.enum(["device","rail","duct"])}).strict()).max(1000)}).strict();
 const eventSchema=z.object({time:positive,text:z.string().max(1000),category:z.string().max(32).optional(),nodeId:z.string().max(80).optional()});
 const scenarioSchema=z.object({id:z.string().max(100),name:z.string().max(160),status:z.enum(["PASS","WARNING","FAIL"]),at:z.string().max(40),steps:z.array(z.string().max(1000)).max(100),duration:positive});
@@ -176,7 +176,7 @@ const nodeSchema = z.object({
 const schema = z.object({
   format:z.literal("rjm-relay-studio"),version:z.literal(1),id,name:z.string().min(1).max(120),notes:z.string().max(12000),
   referenceKey:z.enum(REFERENCE_KEYS).optional(),
-  nodes:z.array(nodeSchema).max(500),wires:z.array(z.object({id,from:z.string().max(110),to:z.string().max(110),label:z.string().max(40),color:z.enum(["auto","R","S","T","N","PE","signal"]),bends:z.array(point).max(20),cable:cableSchema.optional()}).strict()).max(2000),
+  nodes:z.array(nodeSchema).max(500),wires:z.array(z.object({id,from:z.string().max(110),to:z.string().max(110),label:z.string().max(40),color:z.enum(["auto","R","S","T","N","PE","signal"]),bends:z.array(point).max(128),cable:cableSchema.optional()}).strict()).max(2000),
   calculation:calculationSchema,
   sheets:z.array(z.object({id:sheetSchema,name:z.string().min(1).max(100)}).strict()).max(30).optional(),
   front:panelSchema.optional(),internal:panelSchema.optional(),

@@ -2,6 +2,7 @@ import { kind,number,pin,ports } from "../circuit.ts";
 import type { Project } from "../circuit.ts";
 import { coilKinds,freshRuntime } from "./state.ts";
 import type { Runtime } from "./state.ts";
+import { sizeProjectCables } from "../cable-sizing.ts";
 import { nominalCurrent } from "./load.ts";
 import { cableCapacity } from "./cable.ts";
 import { protectionRating } from "./protection.ts";
@@ -11,11 +12,13 @@ export function checkWiring(p:Project,r:Runtime=freshRuntime()):Diagnostic[]{
  if(!Object.keys(r.devices).length)r=stepCircuit(p,r,0);
  const results:Diagnostic[]=[],add=(severity:Diagnostic["severity"],target:string,message:string)=>results.push({id:String(results.length),severity,target,message});
  const ends=new Map<string,number>();for(const w of p.wires){ends.set(w.from,(ends.get(w.from)??0)+1);ends.set(w.to,(ends.get(w.to)??0)+1);}
+ const sizing=p.wires.some(w=>w.cable?.sizing==="auto")?sizeProjectCables(p).recommendations:undefined;
  const pairs=new Set<string>(),drivers=p.nodes.filter(n=>coilKinds.includes(kind(n))||["pfr","overload"].includes(kind(n)));
  for(const w of p.wires){
   const pair=[w.from,w.to].sort().join("|");if(pairs.has(pair))add("WARNING",w.id,"Koneksi kabel duplikat / paralel. Periksa apakah disengaja.");pairs.add(pair);
   if(w.cable){const iz=cableCapacity(w.cable);if(iz===null)add("WARNING",w.id,"Kapasitas kabel perlu input datasheet untuk material, isolasi, atau ukuran ini.");}
   else add("INFO",w.id,"Ukuran dan panjang kabel belum diisi.");
+  if(w.cable?.sizing==="auto"&&sizing?.get(w.id)?.section===null)add("WARNING",w.id,"Ukuran AUTO belum terselesaikan: "+sizing.get(w.id)!.messages.join(" · "));
   const s=r.cables[w.id];if(s?.capacity!==null&&s?.capacity!==undefined){
     if(s.current>s.capacity)add("ERROR",w.id,`Arus ${s.current.toFixed(1)} A melebihi kapasitas kabel ${s.capacity.toFixed(1)} A.`);
     if(s.protection.length&&!s.protection.some(id=>protectionRating(p.nodes.find(n=>n.id===id)!)<=s.capacity!))add("ERROR",w.id,"Critical protection coordination: semua pemutus upstream lebih besar dari kapasitas kabel.");

@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { blankProject, newNode, pin } from "../lib/circuit.ts";
 import { PROJECT_PRESETS } from "../lib/project-presets.ts";
+import { routingContext,moveWireSegment,addWireBend,orthogonalPoints } from "../lib/wire-routing.ts";
 import { crossesBox, layoutDiagram, nodeBounds, overlaps } from "../lib/diagram-layout.ts";
 
 function clearLabels(layout){
@@ -43,4 +44,19 @@ test("existing wiring presets retain connections and all annotations fit export 
     for(const sheet of ["power","control"])clearLabels(layoutDiagram(p,sheet));
     assert.equal(JSON.stringify(p),before,preset.id);
   }
+});
+
+test("all bundled sheets route each conductor in a separate orthogonal lane",()=>{
+  for(const preset of PROJECT_PRESETS)for(const sheet of ["power","control"]){
+    const layout=layoutDiagram(preset.create(),sheet);
+    layout.routes.forEach((r,i)=>{const blocked=routingContext(layout.routes.slice(0,i),r.points[0],r.points.at(-1));
+      for(let j=1;j<r.points.length;j++){const a=r.points[j-1],b=r.points[j];assert.ok(Math.abs(a.x-b.x)<.001||Math.abs(a.y-b.y)<.001,"every segment is orthogonal");assert.equal(blocked(a,b),false,preset.id+" "+r.wire.id+" cannot stack on another wire");}
+    });
+  }
+});
+test("straight wires can gain a dogleg and dragging an interior segment keeps endpoints and right angles",()=>{
+  const start={x:40,y:100},end={x:40,y:400},points=addWireBend([start,end]);
+  assert.ok(points.length>=6);const moved=moveWireSegment(points,2,{x:120,y:220});assert.deepEqual(moved[0],start);assert.deepEqual(moved.at(-1),end);assert.ok(moved.some(p=>p.x===120));
+  for(let i=1;i<moved.length;i++)assert.ok(moved[i].x===moved[i-1].x||moved[i].y===moved[i-1].y);
+  assert.deepEqual(orthogonalPoints([{x:0,y:0},{x:100,y:50}]),[{x:0,y:0},{x:100,y:0},{x:100,y:50}]);
 });
