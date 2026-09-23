@@ -6,8 +6,9 @@ import { layoutDiagram, terminalLabel,alignNode } from "../lib/diagram-layout";
 import type { Node, Project, Sheet } from "../lib/circuit";
 import { stateOf } from "../lib/simulator";
 import type { Runtime } from "../lib/simulator";
+import { WIRE_COLORS as PHASE,wirePhases } from "../lib/wire-colors";
 
-export const PHASE:Record<string,string>={R:"#f38b85",S:"#e4cf68",T:"#d6dce3",N:"#77b3f3",PE:"#a6d782","+":"#ef9287","-":"#80baf0",auto:"#7c8b99",signal:"#afc2d6"};
+export { WIRE_COLORS as PHASE } from "../lib/wire-colors";
 export function Symbol({node:n,runtime,mini=false,rotation=0}:{node:Node;runtime?:Runtime;mini?:boolean;rotation?:number}){
   const {width:w,height:h}=nodeSize(n),k=kind(n),s=runtime?stateOf(runtime,n):undefined,on=s?!!s.on:["nc","stop","estop"].includes(k)||!!n.params.on;
   const ink=s?.tripped?"#c12f34":runtime&&on?"#20834e":mini?"#c8d1dd":"#283a49";
@@ -69,6 +70,7 @@ export function Schematic({project,sheet,runtime,running,editable,selected,onSel
   const [guides,setGuides]=useState<{guideX?:number;guideY?:number}>({});
   useEffect(()=>{const down=(e:KeyboardEvent)=>{if(e.code==="Space"&&!(e.target as Element)?.closest("input,textarea,select,button,[contenteditable=true]")&&!(running&&(e.target as Element)?.closest(".circuit-node"))){space.current=true;e.preventDefault();}},up=()=>{space.current=false;};window.addEventListener("keydown",down);window.addEventListener("keyup",up);window.addEventListener("blur",up);return()=>{window.removeEventListener("keydown",down);window.removeEventListener("keyup",up);window.removeEventListener("blur",up);};},[running]);
   const {nodes,routes,nodeLabels,wireLabels,bounds:box}=useMemo(()=>layoutDiagram(project,sheet),[project,sheet]);
+  const conductorPhases=useMemo(()=>wirePhases(project),[project]);
   const fit=()=>setView({x:box.x,y:box.y,z:Math.max(.15,Math.min(1.5,size.w/box.w,size.h/box.h))});
   useEffect(()=>{if(!host.current)return;const observer=new ResizeObserver(entries=>{const r=entries[0].contentRect;setSize({w:r.width,h:r.height});});observer.observe(host.current);return()=>observer.disconnect();},[]);
   const fittedDocument=useRef<string|null>(null);
@@ -100,12 +102,15 @@ export function Schematic({project,sheet,runtime,running,editable,selected,onSel
       <rect x={view.x-2000} y={view.y-2000} width={20000} height={20000} fill="#f7f9fa" className="canvas-background"/>
       {!printing&&<rect x={view.x-2000} y={view.y-2000} width={20000} height={20000} fill="url(#dot-grid)" pointerEvents="none"/>}
       {routes.map(({wire:w,points})=>{
-        const phase=runtime.energized[w.from],live=running&&phase&&!["N","PE","-"].includes(phase),label=wireLabels.get(w.id),path=pathData(points),color=running?(live?"#258251":"#89939c"):"#34414c";
-        return <g key={w.id} onPointerDown={e=>{if(space.current||e.button===1)return;e.stopPropagation();onSelect(w.id);}}>
-          {debug&&<title>{`Kabel ${w.label||w.id} · ${w.from} → ${w.to} · ${runtime.energized[w.from]??"floating"} · ${(runtime.wireCurrent[w.id]??0).toFixed(3)} A · ${w.cable?.section??"?"} mm² · ${(runtime.cables[w.id]?.temperature??30).toFixed(1)} °C`}</title>}
+        const potential=runtime.energized[w.from],live=running&&potential&&!["N","PE","-"].includes(potential),phase=conductorPhases.get(w.id)??"auto",label=wireLabels.get(w.id),path=pathData(points),color=PHASE[phase],width=live?3.2:2.2;
+        return <g key={w.id} data-wire={w.id} data-phase={phase} onPointerDown={e=>{if(space.current||e.button===1)return;e.stopPropagation();onSelect(w.id);}}>
+          <title>{`Kabel ${w.label||w.id} · ${phase==="auto"?"fase belum diketahui":phase}${debug?` · ${w.from} → ${w.to} · ${runtime.energized[w.from]??"floating"} · ${(runtime.wireCurrent[w.id]??0).toFixed(3)} A · ${w.cable?.section??"?"} mm² · ${(runtime.cables[w.id]?.temperature??30).toFixed(1)} °C`:""}`}</title>
           <path d={path} stroke="transparent" strokeWidth={16} fill="none" style={{cursor:"pointer"}}/>
-          <path d={path} stroke="#f7f9fa" strokeWidth={live?7:6} fill="none" pointerEvents="none"/>
-          <path d={path} stroke={selected===w.id?"#316a9c":runtime.injected[w.id+":short"]?"#c33636":color} strokeWidth={live?3.1:1.6} opacity={live?1:.78} fill="none" pointerEvents="none"/>
+          <path d={path} stroke="#f7f9fa" strokeWidth={width+6} fill="none" pointerEvents="none"/>
+          {selected===w.id&&<path d={path} stroke="#78add4" strokeWidth={width+4} fill="none" pointerEvents="none"/>}
+          {runtime.injected[w.id+":short"]&&<path d={path} stroke="#c33636" strokeWidth={width+4} strokeDasharray="9 6" fill="none" pointerEvents="none"/>}
+          {["S","T"].includes(phase)&&<path d={path} stroke="#53606a" strokeWidth={width+1.4} fill="none" pointerEvents="none"/>}
+          <path className="wire-conductor" d={path} stroke={color} strokeWidth={width} fill="none" pointerEvents="none"/>
           {label&&<text className="wire-annotation" x={label.x+6} y={label.y+17} fill="#566676" fontSize="14" fontFamily="monospace">{label.lines.map((line,i)=><tspan key={i} x={label.x+6} dy={i?18:0}>{line}</tspan>)}</text>}
           {selected===w.id&&!running&&w.bends.map((point,i)=><circle key={i} cx={point.x} cy={point.y} r={6} fill="#91a4ff" stroke="#fff" onPointerDown={e=>{e.stopPropagation();if(!editable)return;onCheckpoint();drag.current={id:w.id,x:e.clientX,y:e.clientY,nx:point.x,ny:point.y,index:i};e.currentTarget.setPointerCapture(e.pointerId);}}/>)}
         </g>;
@@ -139,7 +144,7 @@ export function Schematic({project,sheet,runtime,running,editable,selected,onSel
       {start&&<path d={pathData([start,...bends,cursor])} fill="none" stroke="#91a4ff" strokeWidth={2.5} strokeDasharray="8 5" pointerEvents="none"/>}
       {!nodes.length&&<text x={100} y={180} fill="#9caec2" fontSize="25">Pilih komponen, lalu klik area gambar.</text>}
     </svg>
-    {!printing&&nodes.length>15&&<button className="diagram-minimap" aria-label="Navigasi minimap" onClick={e=>{const rect=e.currentTarget.getBoundingClientRect(),x=box.x+(e.clientX-rect.left)/rect.width*box.w,y=box.y+(e.clientY-rect.top)/rect.height*box.h;setView(v=>({...v,x:x-size.w/v.z/2,y:y-size.h/v.z/2}));}}><svg viewBox={`${box.x} ${box.y} ${box.w} ${box.h}`}><rect x={box.x} y={box.y} width={box.w} height={box.h} fill="#f7f9fa"/>{routes.map(r=><path key={r.wire.id} d={pathData(r.points)} stroke="#9aabb8" strokeWidth={7} fill="none"/>)}{nodes.map(n=><rect key={n.id} x={n.x} y={n.y} width={nodeSize(n).width} height={nodeSize(n).height} fill="#566c7d"/>)}<rect x={view.x} y={view.y} width={size.w/view.z} height={size.h/view.z} fill="#2f74a3" fillOpacity={.15} stroke="#2f74a3" strokeWidth={10}/></svg></button>}
+    {!printing&&nodes.length>15&&<button className="diagram-minimap" aria-label="Navigasi minimap" onClick={e=>{const rect=e.currentTarget.getBoundingClientRect(),x=box.x+(e.clientX-rect.left)/rect.width*box.w,y=box.y+(e.clientY-rect.top)/rect.height*box.h;setView(v=>({...v,x:x-size.w/v.z/2,y:y-size.h/v.z/2}));}}><svg viewBox={`${box.x} ${box.y} ${box.w} ${box.h}`}><rect x={box.x} y={box.y} width={box.w} height={box.h} fill="#f7f9fa"/>{routes.map(r=><g key={r.wire.id}>{conductorPhases.get(r.wire.id)==="T"&&<path d={pathData(r.points)} stroke="#53606a" strokeWidth={11} fill="none"/>}<path d={pathData(r.points)} stroke={PHASE[conductorPhases.get(r.wire.id)??"auto"]} strokeWidth={7} fill="none"/></g>)}{nodes.map(n=><rect key={n.id} x={n.x} y={n.y} width={nodeSize(n).width} height={nodeSize(n).height} fill="#566c7d"/>)}<rect x={view.x} y={view.y} width={size.w/view.z} height={size.h/view.z} fill="#2f74a3" fillOpacity={.15} stroke="#2f74a3" strokeWidth={10}/></svg></button>}
     {!printing&&<div className="canvas-caption"><span>{pending?"Klik terminal tujuan · klik area kosong untuk belokan · Esc batal":adding?"Klik untuk menempatkan "+CATALOG[adding].name:running?"Klik sakelar untuk menguji · tahan push button":editable?"Tarik komponen · klik terminal untuk menyambung":"Mode lihat & simulasi · edit dari PC/laptop"}</span><span>{Math.round(view.z*100)}%</span></div>}
   </div>;
 }

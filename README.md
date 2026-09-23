@@ -20,6 +20,7 @@ Project tersimpan di browser perangkat. Setelah aplikasi memuat aset dan menampi
 
 - Lima tampilan dari project yang sama: Power, Control, Front Panel, Panel Internal, dan Simulation. Tambah/rename lembar wiring; kontak/coil bertag sama tertaut antarlembar.
 - Kanvas SVG terang: grid, pan/zoom, snap alignment, minimap, drag, putar, salin, undo/redo, kabel ortogonal dan belokan manual. Panel atas/bawah/kiri/kanan bisa diminimalkan. Posisi label mengikuti rotasi; huruf tetap terbaca dan keterangan ditempatkan menjauhi kabel.
+- Warna kabel mengikuti jalur sumber: **R merah, S kuning, T putih, N biru, PE hijau**. Tetap saat OFF/trip, dipilih, simulasi, SVG/PNG dan cetak; garis aktif lebih tebal. Warna putih/kuning diberi tepi gelap. Sensor tanpa fase tetap warna sinyal/netral; fase yang bertentangan tidak ditebak.
 - 70 komponen: sumber AC/DC, trafo, MCB/MCCB/RCCB, overload, PFR, kontaktor, kontak bantu, selector 4 terminal, tombol, timer delay/interval/mingguan, motor, heater, lampu, buzzer, controller ETC-974/XR70CX, HP/LP, probe, terminal dan meter.
 - Engine mengikuti **graf kabel yang digambar**, termasuk pemutusan aktual coil dan interlock. Crossing tanpa junction tidak terhubung. Simulasi dan pengujian skenario berjalan di Web Worker.
 - Arus nameplate atau estimasi HP/PK daya poros, LRA/start, arus fase/netral, kW/kVA/PF; jaringan konduktor resistif, pembagian arus jalur paralel, drop tegangan dan pemanasan kabel.
