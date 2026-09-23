@@ -12,11 +12,33 @@ export function nodeBounds(n:Node):Rect {
   const w=quarter?size.height:size.width,h=quarter?size.width:size.height;
   return {x:n.x+(size.width-w)/2,y:n.y+(size.height-h)/2,w,h};
 }
+export function alignNode(n:Node,x:number,y:number,nodes:Node[],tolerance=8){
+  const body=nodeBounds({...n,x,y}),axes={x:[body.x,body.x+body.w/2,body.x+body.w],y:[body.y,body.y+body.h/2,body.y+body.h]};
+  const result:{x:number;y:number;guideX?:number;guideY?:number}={x:Math.round(x/20)*20,y:Math.round(y/20)*20};
+  for(const axis of ["x","y"] as const){
+    let best=tolerance;
+    for(const other of nodes){if(other.id===n.id||other.sheet!==n.sheet)continue;const b=nodeBounds(other),size=axis==="x"?b.w:b.h;
+      for(const target of [b[axis],b[axis]+size/2,b[axis]+size])for(const own of axes[axis])if(Math.abs(target-own)<best){best=Math.abs(target-own);result[axis]=(axis==="x"?x:y)+target-own;result[axis==="x"?"guideX":"guideY"]=target;}
+    }
+    result[axis]=Math.max(0,Math.min(10000,result[axis]));
+  }
+  return result;
+}
 export function wirePoints(w:Wire,nodes:Map<string,Node>):Point[] {
   const [a,ap]=w.from.split(":"),[b,bp]=w.to.split(":"),na=nodes.get(a),nb=nodes.get(b);
   if(!na||!nb)return [];
-  const start=portPosition(na,ap),end=portPosition(nb,bp),mid=(start.y+end.y)/2;
-  return [start,...(w.bends.length?w.bends:[{x:start.x,y:mid},{x:end.x,y:mid}]),end];
+  const start=portPosition(na,ap),end=portPosition(nb,bp);
+  const orthogonal=(points:Point[])=>{const out=[points[0]];for(const b of points.slice(1)){const a=out.at(-1)!;if(Math.abs(a.x-b.x)>1e-7&&Math.abs(a.y-b.y)>1e-7)out.push({x:b.x,y:a.y});if(Math.abs(a.x-b.x)>1e-7||Math.abs(a.y-b.y)>1e-7)out.push(b);}return out;};
+  if(w.bends.length)return orthogonal([start,...w.bends,end]);
+  const stub=(n:Node,name:string,p:Point)=>{const t=ports(n).find(t=>t.name===name)!,size=nodeSize(n),dx=t.x===0?-1:t.x===size.width?1:0,dy=dx?0:t.y===0?-1:1,a=n.rotation*Math.PI/180;return {x:p.x+24*Math.round(dx*Math.cos(a)-dy*Math.sin(a)),y:p.y+24*Math.round(dx*Math.sin(a)+dy*Math.cos(a))};};
+  const sa=stub(na,ap,start),sb=stub(nb,bp,end),obstacles=[...nodes.values()].filter(n=>n.id!==na.id&&n.id!==nb.id).map(n=>padded(nodeBounds(n),8));
+  const options:Point[][]=[];
+  for(const offset of [0,40,-40,80,-80,160,-160,320,-320]){
+   const x=(sa.x+sb.x)/2+offset,y=(sa.y+sb.y)/2+offset;
+   options.push([start,sa,{x:sa.x,y},{x:sb.x,y},sb,end],[start,sa,{x,y:sa.y},{x,y:sb.y},sb,end]);
+  }
+  const score=(ps:Point[])=>ps.slice(1).reduce((sum,b,i)=>{const a=ps[i];return sum+Math.abs(a.x-b.x)+Math.abs(a.y-b.y)+obstacles.filter(box=>crossesBox(a,b,box)).length*100000;},0);
+  return orthogonal(options.reduce((best,ps)=>score(ps)<score(best)?ps:best,options[0]));
 }
 const padded=(b:Rect,p:number):Rect=>({x:b.x-p,y:b.y-p,w:b.w+p*2,h:b.h+p*2});
 export const overlaps=(a:Rect,b:Rect)=>a.x<b.x+b.w&&a.x+a.w>b.x&&a.y<b.y+b.h&&a.y+a.h>b.y;

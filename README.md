@@ -4,29 +4,32 @@ Editor wiring dan simulator kontrol listrik berbasis web, berbahasa Indonesia. M
 
 ## Cara pakai
 
-1. Buka aplikasi, lalu pilih **Proyek → Mulai dari wiring proyek**. Pilih panel Lion, DSV, Jago Coffee, atau latihan START/STOP.
+1. Buka aplikasi, lalu pilih **Proyek → Mulai dari wiring proyek**. Pilih **Cold storage · commissioning** untuk mencoba seluruh alur, atau panel Lion, DSV, Jago Coffee dan latihan START/STOP.
 2. Pilih komponen di palet lalu klik kanvas, atau seret komponen ke kanvas.
 3. Klik terminal asal lalu tujuan untuk menyambung kabel. Klik area kosong di antaranya untuk membuat belokan; Esc membatalkan.
 4. Klik komponen untuk mengatur tag, keterangan dan parameter. Coil dan kontak dengan **tag sama** tertaut antarlembar Power/Control.
 5. Tekan **Jalankan**. Klik sakelar/MCB untuk mengoperasikan. Tahan push button lalu lepaskan; Space/Enter juga tersedia.
 6. Ubah suhu sensor di tray simulasi. Coba trip F1/F2, gangguan PFR, emergency stop dan HP/LP. Pilih sumber saat simulasi untuk mencoba kehilangan fase.
-7. **Unduh project** menghasilkan JSON yang dapat diimpor sebagai project baru. **SVG** mengunduh gambar aktif; tombol printer membuka cetak/PDF.
-8. **Sinkronkan** membutuhkan host dengan sesi akun ChatGPT. Konflik: pakai lokal, pakai akun, atau simpan keduanya. Backend standalone saat ini sementara: gunakan ekspor JSON sebagai cadangan permanen.
+7. Buka **Front Panel** untuk menekan tombol fisik, **Panel Internal** untuk layout dalam mm, dan **Simulation** untuk parameter, fault, wiring checker, 13 scenario tests, multimeter serta laporan.
+8. **Unduh project** menghasilkan JSON yang dapat diimpor sebagai project baru. **SVG/PNG** mengunduh gambar aktif; tombol printer membuka cetak/PDF. **BOM & laporan** menyediakan tiga schedule Excel (SpreadsheetML XML) dan laporan simulasi PDF melalui dialog cetak.
+9. **Sinkronkan** menyimpan project ke akun ChatGPT pada website privat. Konflik: pakai lokal, pakai akun, atau simpan keduanya. Gunakan ekspor JSON sebagai cadangan tambahan.
 
 Project tersimpan di browser perangkat. Setelah aplikasi memuat aset dan menampilkan **Offline siap**, halaman dapat dibuka lagi tanpa jaringan. Sinkronisasi memerlukan koneksi dan sesi akun. Unduh project sebagai cadangan sebelum menghapus data browser. PDF acuan memerlukan jaringan jika belum tersimpan di browser.
 
 ## Fitur
 
-- Kanvas SVG: grid, pan/zoom, drag, putar, salin, hapus, undo/redo, terminal, belokan, warna dan label kabel.
-- Sumber AC 1/3 fase dan DC; MCB 1–4P, sekering, RCCB, overload, PFR; kontaktor 1–4P.
-- Tombol NO/NC, emergency stop, limit switch, MAN–OFF–AUTO, selector 1–0–2, kontak NO/NC/tukar, coil, TON, TOFF, impulse dan timer pergantian berulang.
-- Motor/evaporator/compressor 1 atau 3 fase, heater, lampu, buzzer visual, solenoid, probe, controller ETC-974 dan XR70CX dengan pemetaan terminal berbeda.
-- Engine mengikuti **graf kabel yang digambar**; menghapus sambungan mengubah hasil. Crossing tidak otomatis terhubung.
-- Thermostat, differential, jeda restart compressor, defrost interval/manual, batas waktu/suhu, drip dan fan delay.
-- Panel uji, riwayat, diagnostik dan gangguan fase, sensor, HP/LP, overload.
-- Perhitungan arus, kW/kVA, starting, drop tegangan dan kandidat kabel Cu/PVC.
-- Input ampere nameplate atau HP/PK **daya poros**, dengan efisiensi dan faktor daya eksplisit.
-- Penyimpanan offline, import/export tervalidasi, akun terpisah, pemeriksaan revisi atomik, pilihan konflik.
+- Lima tampilan dari project yang sama: Power, Control, Front Panel, Panel Internal, dan Simulation. Tambah/rename lembar wiring; kontak/coil bertag sama tertaut antarlembar.
+- Kanvas SVG terang: grid, pan/zoom, snap alignment, minimap, drag, putar, salin, undo/redo, kabel ortogonal dan belokan manual. Panel atas/bawah/kiri/kanan bisa diminimalkan. Posisi label mengikuti rotasi; huruf tetap terbaca dan keterangan ditempatkan menjauhi kabel.
+- 70 komponen: sumber AC/DC, trafo, MCB/MCCB/RCCB, overload, PFR, kontaktor, kontak bantu, selector 4 terminal, tombol, timer delay/interval/mingguan, motor, heater, lampu, buzzer, controller ETC-974/XR70CX, HP/LP, probe, terminal dan meter.
+- Engine mengikuti **graf kabel yang digambar**, termasuk pemutusan aktual coil dan interlock. Crossing tanpa junction tidak terhubung. Simulasi dan pengujian skenario berjalan di Web Worker.
+- Arus nameplate atau estimasi HP/PK daya poros, LRA/start, arus fase/netral, kW/kVA/PF; jaringan konduktor resistif, pembagian arus jalur paralel, drop tegangan dan pemanasan kabel.
+- Proteksi thermal/magnetic, overload manual/auto reset, urutan/kehilangan fase, voltage fault, welded contact, locked rotor, HP/LP dan gangguan kabel. Short-circuit memerlukan Isc sumber.
+- Thermostat, anti-short-cycle, defrost/drip/fan delay, jadwal mingguan, override, serta model suhu cold room dengan probe room/evaporator.
+- Layout fisik mm: perangkat yang sama dengan skematik, DIN rail, cable duct, snap, rotasi, pemeriksaan tumpang tindih dan pemakaian ruang.
+- Wiring checker, 13 scenario tests, multimeter virtual, event log, BOM/cable/terminal schedule, laporan simulasi, SVG/PNG dan cetak PDF.
+- Project lama tetap kompatibel. Offline, import/export tervalidasi, akun terpisah, pemeriksaan revisi dan pilihan resolusi konflik.
+
+Panduan model, asumsi dan cara mencoba: [docs/engineering-model.md](docs/engineering-model.md). Spec pengembangan tersimpan di [docs/engineering-spec.md](docs/engineering-spec.md); batas model di bawah tetap berlaku.
 
 ## Pemetaan Jago Coffee
 
@@ -59,20 +62,16 @@ Catatan lengkap, normalisasi tag, pemetaan halaman dan skenario mencoba tersedia
 
 ## Batas model
 
-**Simulasi dan pemeriksaan awal, bukan persetujuan instalasi.** Tidak mengendalikan perangkat nyata. Kontak ideal, bukan SPICE atau studi proteksi tersertifikasi.
+**Simulasi dan pemeriksaan awal, bukan persetujuan instalasi.** Tidak mengendalikan perangkat nyata. Kontak ideal, model motor arus dan jaringan kabel resistif; bukan SPICE atau studi proteksi tersertifikasi.
 
-- Arus berasal dari input beban. Tidak menyelesaikan pembagian arus kabel paralel, impedansi sumber, arcing, transien/torsi motor atau unbalance.
-- Suhu diubah pengguna; tidak ada model termodinamika ruangan/refrigerant.
-- Trip MCB/overload adalah model pembelajaran. Short ideal menghentikan simulasi, tanpa angka Ik fiktif. Overload mengubah kontak bantu; rangkaian coil harus dirakit supaya daya motor terputus.
-- PK kapasitas pendinginan **tidak** dikonversi langsung menjadi ampere. Mode cepat hanya menghitung setelah pengguna memastikan angka tersebut daya poros motor.
-- Kabel: tabel Cu/PVC 1,5–25 mm², tidak ditanam, metode A2/B2/C. Koreksi suhu dan grouping konservatif. Uji awal Ib ≤ In ≤ Iz dan batas drop desain. Tidak ada kandidat jika seluruh ukuran gagal.
-- Belum mengesahkan PUIL, ketahanan hubung singkat kabel, waktu pemutusan, selektivitas, harmonisa, ukuran PE, drop hulu saat start atau kode produk kontaktor/overload. Verifikasi final membutuhkan kondisi jalur, data mesin dan datasheet.
+- Kurva thermal/magnetic dan panas kabel adalah pendekatan dengan konstanta yang dapat diatur, bukan kurva pabrikan atau kelas trip IEC tersertifikasi. Overload memutus kontak bantu; coil harus benar-benar terhubung agar motor berhenti.
+- Arus start menggunakan LRA/faktor dan durasi; belum menghitung torsi, slip, harmonisa atau transien elektromagnetik. PK kapasitas pendinginan tidak dikonversi langsung menjadi ampere.
+- Short memakai Isc prospektif sumber dan resistansi satu loop. Nilai Isc yang belum diketahui atau breaking capacity yang tidak cukup menghentikan simulasi dengan diagnostik. Belum ada studi selektivitas atau I²t kabel.
+- Suhu ruangan memakai neraca energi sederhana; suction/discharge adalah input virtual, bukan hasil siklus refrigeran.
+- Kabel live: Cu/PVC 1,5–50 mm², tabel tiga konduktor berbeban G20, metode A2/B2/C. Al/XLPE/ukuran lain memerlukan ampacity datasheet. Mode advanced memakai koreksi suhu dan grouping; mode simple memakai kapasitas dasar. Kalkulator terpisah mempertahankan tabel konservatif G21 1,5–25 mm².
+- PASS menyatakan respons skenario yang diuji; WARNING menyatakan prasyarat belum terpenuhi. Wiring checker tidak mengesahkan PUIL, pemilihan PE, pemutusan gangguan atau instalasi nyata.
 
-Acuan primer:
-
-- [Schneider EIG: simplified cable sizing, Figure G21](https://www.electrical-installation.org/enwiki/Recommended_simplified_approach_for_cable_sizing)
-- [Schneider: metode pemasangan dan faktor koreksi](https://www.electrical-installation.org/enwiki/General_method_for_cable_sizing)
-- [Schneider: voltage drop](https://www.electrical-installation.org/enwiki/Calculation_of_voltage_drop_in_steady_load_conditions)
+Acuan primer dan rumus tercantum dalam [dokumentasi model](docs/engineering-model.md). Data nameplate, metode pemasangan dan datasheet perangkat diperlukan untuk desain final.
 
 ## Pengembangan
 
@@ -93,7 +92,10 @@ Struktur inti:
 | File | Fungsi |
 | --- | --- |
 | lib/circuit.ts | Format project dan katalog komponen |
-| lib/simulator.ts | Graf koneksi dan engine kontrol |
+| lib/simulator.ts + lib/engine/ | Graf, arus, proteksi, refrigerasi, gangguan dan skenario |
+| lib/cold-room-template.ts | Contoh commissioning dengan 63 komponen / 124 konduktor |
+| lib/panel-layout.ts + app/panel-designer.tsx | Layout fisik mm dan kontrol panel |
+| lib/reports.ts + app/engineering.tsx | Meter, diagnostik, skenario dan laporan |
 | lib/templates.ts | Template Jago Coffee dan self-hold |
 | lib/panel-templates.ts | Lima panel dari PDF Lion dan DSV |
 | lib/project-presets.ts | Pilihan template dan tautan PDF per halaman |

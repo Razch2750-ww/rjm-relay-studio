@@ -401,3 +401,81 @@ textarea { border: 1px solid #40516a; background: #0f1823; border-radius: 5px; p
   .diagram-panel[data-state=inactive] { display: none !important; }
   .canvas-host > svg { position: relative; height: 275mm; width: 100%; }
 }
+
+/* Engineering work surfaces share the circuit model; status is the only strong color. */
+.sheet-tabs { min-width: 0; flex: 1 1 auto; }
+.sheet-controls { flex: 0 0 auto; }
+.sheet-tools { display:flex; align-items:center; gap:6px; padding:2px 10px; border-bottom:1px solid var(--border); flex:0 0 auto; }
+.sheet-tools button { height:26px; font-size:11px; }
+.sheet-tools input { width:180px; height:26px; font-size:12px; }
+.canvas-host { background:#f7f9fa; }
+.canvas-caption { color:#435868; }
+.canvas-caption span { background:#f7f9faf2; border-color:#bdc9d3; }
+.inspector-symbol { background:#f1f4f6; border-radius:3px; }
+.diagram-minimap { position:absolute; right:14px; bottom:55px; width:145px; height:96px; background:#f7f9fa; border:1px solid #a2b3c0; padding:4px; border-radius:2px; }
+.diagram-minimap svg { width:100%; height:100%; }
+.engineering-surface { padding:22px 26px 48px; background:#f5f7f9; color:#263b4c; min-height:100%; --background:#f5f7f9; --foreground:#263b4c; --input:#c4ced6; --border:#c4ced6; --primary:#304c61; --primary-foreground:#ffffff; --muted:#e9eef2; --muted-foreground:#5a6e7d; --accent:#e5edf3; --accent-foreground:#253e51; }
+.engineering-surface h2 { font-size:19px; font-weight:600; letter-spacing:-.25px; }
+.engineering-surface h3 { font-size:14px; font-weight:600; margin:24px 0 10px; }
+.engineering-surface p { margin:10px 0; line-height:1.6; }
+.engineering-surface .muted { color:#657988; font-size:12px; }
+.engineering-surface .field>span { color:#445e70; font-size:12px; }
+.engineering-surface input,.engineering-surface .choice { color:#263b4c; background:#fff; border-color:#bcc9d4; }
+.engineering-surface input:disabled { opacity:.65; }
+.engineering-surface button { white-space:normal; }
+.engineering-title { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px; margin-bottom:16px; }
+.engineering-title p { font-size:12px; color:#617382; margin:3px 0; }
+.engineering-title h3 { margin:0; }
+.engineering-title>.field { width:180px; }
+.engineering-nav { display:flex; gap:0; overflow:auto; border-bottom:1px solid #b9c8d3; margin-bottom:20px; }
+.engineering-nav button { flex:0 0 auto; font-size:12px; padding:10px 14px; border-bottom:2px solid transparent; color:#617989; }
+.engineering-nav button[aria-current=page] { color:#243f53; border-color:#315b77; background:#e6edf2; }
+.engineering-nav span { display:inline-block; margin-left:6px; padding:0 5px; color:#9b2e35; background:#f3e0e2; border-radius:3px; }
+.engineering-metrics { display:grid; grid-template-columns:repeat(auto-fit,minmax(105px,1fr)); gap:0; border-block:1px solid #c8d1d9; }
+.engineering-metrics>div { padding:14px 12px; border-right:1px solid #c8d1d9; display:flex; flex-direction:column; gap:5px; }
+.engineering-metrics>div:last-child { border:0; }
+.engineering-metrics span { font-size:11px; text-transform:uppercase; color:#617788; letter-spacing:.4px; }
+.engineering-metrics strong { font:600 19px var(--font-mono); white-space:nowrap; }
+.engineering-table-wrap { overflow-x:auto; margin:16px 0; max-width:100%; border:1px solid #c8d3dc; }
+.engineering-table { width:100%; border-collapse:collapse; font-size:12px; font-variant-numeric:tabular-nums; }
+.engineering-table th,.engineering-table td { padding:10px 12px; border-bottom:1px solid #d9e0e5; text-align:left; vertical-align:middle; white-space:nowrap; }
+.engineering-table th { background:#eaf0f4; color:#425e72; font-size:11px; font-weight:600; }
+.engineering-table td small { display:block; color:#778a97; font-size:10px; }
+.engineering-table td button { color:#315d7c; text-decoration:underline; text-underline-offset:3px; font-weight:600; }
+.engineering-table tbody tr:hover { background:#edf2f6; }
+progress { display:inline-block; width:60px; height:7px; accent-color:#3f8b69; margin-right:7px; }
+.engineering-form { display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); align-items:end; gap:14px; margin:18px 0; }
+.engineering-form>.field { min-width:0; }
+.engineering-form .choice { width:100%; }
+.button-row { display:flex; flex-wrap:wrap; gap:8px; margin:12px 0; }
+.diagnostic-row { width:100%; display:flex; align-items:baseline; gap:14px; padding:12px 10px; border-bottom:1px solid #d3dce3; text-align:left; font-size:12px; }
+.diagnostic-row>b { min-width:60px; font:600 10px var(--font-mono); color:#6b7d8c; }
+.diagnostic-row>span { min-width:60px; font:12px var(--font-mono); }
+.diagnostic-row.error>b,.status-fail { color:#ad333c; }
+.diagnostic-row.warning>b,.status-warning { color:#936014; }
+.status-pass { color:#258255; }
+.fault-active { display:flex; align-items:center; justify-content:space-between; padding:12px 0; gap:14px; border-bottom:1px solid #d1dbe2; }
+.scenario-list article { border-bottom:1px solid #c5d1db; padding:16px 0; }
+.scenario-list article>div { display:flex; align-items:center; gap:20px; }
+.scenario-list h3 { margin:0; flex:1; }
+.scenario-list ol { padding:8px 0 8px 20px; font-size:12px; line-height:1.8; }
+.scenario-list small { font-size:10px; color:#6e8090; }
+.scenario-list article>div>span { font:600 11px var(--font-mono); }
+.meter-display { display:flex; flex-direction:column; align-items:flex-start; gap:14px; border:1px solid #bccbd7; padding:26px; margin:24px 0; background:#e9eef1; }
+.meter-display strong { font:500 42px var(--font-mono); color:#293f4e; }
+.meter-display strong small { font-size:19px; }
+.meter-display>span { font-size:12px; color:#4f6778; }
+.engineering-event-log { margin:18px 0; border-top:1px solid #c5d2dc; }
+.engineering-event-log button { display:flex; gap:14px; padding:8px 0; width:100%; text-align:left; border-bottom:1px solid #dce3e9; font-size:12px; }
+.engineering-event-log time { min-width:85px; font-family:var(--font-mono); }
+.engineering-event-log span { min-width:80px; color:#6f8595; }
+.panel-designer-layout { display:grid; grid-template-columns:220px minmax(0,1fr); gap:24px; align-items:start; }
+.layout-properties { display:flex; flex-direction:column; gap:12px; }
+.layout-properties p { font-size:11px; }
+.physical-panel-scroll { overflow:auto; padding:12px; background:#e8eef2; border:1px solid #c2cfd9; }
+.physical-panel-scroll>svg { width:100%; min-width:380px; height:auto; touch-action:none; user-select:none; }
+.panel-designer .diagnostic-row { flex-direction:column; gap:3px; }
+.engineering-surface summary { font-size:13px; font-weight:600; cursor:pointer; padding:8px 0; }
+@media(max-width:1100px){.sheet-bar{padding-inline:10px;gap:6px}.sheet-tabs button{padding-inline:9px;font-size:12px}.engineering-surface{padding:18px}.panel-designer-layout{grid-template-columns:190px minmax(0,1fr);gap:15px}.drawing-toolbar>div{flex-wrap:wrap}.drawing-toolbar{min-height:unset}}
+@media(max-width:700px){.engineering-surface{padding:14px 12px 36px}.engineering-title h2{font-size:16px}.engineering-title>button{font-size:11px}.panel-designer-layout{grid-template-columns:1fr}.layout-properties{display:none}.engineering-metrics{grid-template-columns:repeat(4,minmax(0,1fr))}.engineering-metrics>div{padding:10px 7px}.engineering-metrics strong{font-size:13px}.engineering-form{grid-template-columns:1fr}.engineering-nav button{padding:8px 10px}.diagnostic-row{gap:7px;flex-wrap:wrap}.engineering-event-log button{flex-wrap:wrap;gap:5px}.sheet-tabs{justify-content:flex-start}.diagram-minimap{width:100px;height:65px;bottom:75px}.drawing-toolbar .wire-hint{display:none}.sheet-tools{overflow:auto;white-space:nowrap}.canvas-caption span{max-width:85%}}
+@media print{body{background:white!important}.sheet-tools,.diagram-minimap,.layout-properties,.engineering-nav,.engineering-title>button{display:none!important}.engineering-surface{padding:0;background:white}.panel-designer-layout{display:block}.physical-panel-scroll{padding:0;border:0;overflow:visible}.physical-panel-scroll>svg{min-width:0;max-height:250mm}.engineering-table-wrap{overflow:visible}.scroll-panel{overflow:visible!important}.engineering-surface button{color:#17212b}.engineering-metrics,.scenario-list article{break-inside:avoid}}

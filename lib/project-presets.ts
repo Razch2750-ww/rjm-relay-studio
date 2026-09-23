@@ -1,8 +1,10 @@
 import type { Project } from "./circuit.ts";
 import { dolTemplate, jagoTemplate } from "./templates.ts";
 import { dsvTemplate, lionColdTemplate, lionPumpTemplate, lionSdpTemplate } from "./panel-templates.ts";
+import { coldRoomTemplate } from "./cold-room-template.ts";
 
 export const PROJECT_PRESETS = [
+  {id:"commissioning",name:"Cold storage · commissioning",description:"380 V · M-O-A · HP/LP · inrush · overload · kabel · ruang dinamis",create:coldRoomTemplate},
   {id:"lion-sdp",name:"Lion · Distribusi SDP",description:"12 feeder · MCCB 200 A · PDF hlm. 2–3",create:lionSdpTemplate},
   {id:"lion-pump",name:"Lion · Water pump",description:"3 dry cooler + 2 pump · MAN/AUTO · hlm. 5–7",create:lionPumpTemplate},
   {id:"lion-freezer-chiller",name:"Lion · Freezer & chiller",description:"2 XR70CX · beban 1 fase · hlm. 9–11",create:()=>lionColdTemplate(true)},

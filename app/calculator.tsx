@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { calculate,REFERENCES } from "../lib/calculation";
 import type { CalculationInput } from "../lib/circuit";
 export function Choice({value,onChange,options,label,disabled=false}:{value:string;onChange:(v:string)=>void;options:{value:string;label:string}[];label:string;disabled?:boolean}){
-  return <Select value={value} disabled={disabled} onValueChange={onChange}><SelectTrigger aria-label={label} className="choice"><SelectValue/></SelectTrigger><SelectContent>{options.map(o=><SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}</SelectContent></Select>;
+  return <Select value={value||"__empty__"} disabled={disabled} onValueChange={v=>onChange(v==="__empty__"?"":v)}><SelectTrigger aria-label={label} className="choice"><SelectValue placeholder={label}/></SelectTrigger><SelectContent>{options.map(o=><SelectItem key={o.value} value={o.value||"__empty__"}>{o.label||"Tidak terikat"}</SelectItem>)}</SelectContent></Select>;
 }
 export function Numeric({label,value,onChange,min=-1e6,max=1e6,unit="",disabled=false}:{label:string;value:number;onChange:(v:number)=>void;min?:number;max?:number;unit?:string;disabled?:boolean}){
   const [draft,setDraft]=useState({source:value,text:String(value)}),text=draft.source===value?draft.text:String(value);

@@ -4,7 +4,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { z } from "zod";
 import { validateProject } from "../lib/circuit";
 import type { Project } from "../lib/circuit";
-import { jagoTemplate } from "../lib/templates";
+import { coldRoomTemplate } from "../lib/cold-room-template";
+import { warmSimulationWorker } from "../lib/browser-worker";
 import { acknowledge, entryFromRemote, reconcile } from "../lib/sync";
 import type { Conflict, Entry, Remote, Workspace } from "../lib/sync";
 
@@ -26,10 +27,10 @@ export function useWorkspace(){
       const text=localStorage.getItem(KEY);
       if(text){
         next=workspaceSchema.parse(JSON.parse(text));
-      }else{const p=jagoTemplate();next={version:1,owner:null,active:p.id,entries:[entry(p)]};}
+      }else{const p=coldRoomTemplate();next={version:1,owner:null,active:p.id,entries:[entry(p)]};}
       // eslint-disable-next-line react-hooks/set-state-in-effect -- Hydrate browser-only saved documents after the server render.
       setWorkspace(next);setStatus("Siap · tersimpan di perangkat");enabled.current=!!next.owner;
-    }catch{localError.current=true;const p=jagoTemplate();setWorkspace({version:1,owner:null,active:p.id,entries:[entry(p)]});setStatus("Data lokal gagal dibaca. Salinan lama tidak ditimpa; ekspor data sebelum lanjut.");}
+    }catch{localError.current=true;const p=coldRoomTemplate();setWorkspace({version:1,owner:null,active:p.id,entries:[entry(p)]});setStatus("Data lokal gagal dibaca. Salinan lama tidak ditimpa; ekspor data sebelum lanjut.");}
     setOnline(navigator.onLine);
     const update=()=>setOnline(navigator.onLine);window.addEventListener("online",update);window.addEventListener("offline",update);
     return()=>{window.removeEventListener("online",update);window.removeEventListener("offline",update);};
@@ -45,8 +46,9 @@ export function useWorkspace(){
   useEffect(()=>{
     if(!("serviceWorker" in navigator))return;
     let active=true;
-    navigator.serviceWorker.register("/sw.js").then(()=>navigator.serviceWorker.ready).then(reg=>{
-      const urls=performance.getEntriesByType("resource").map(x=>x.name).filter(x=>{const u=new URL(x);return u.origin===location.origin&&/\.(js|css|woff2?)(\?|$)/.test(u.pathname);});
+    navigator.serviceWorker.register("/sw.js").then(()=>navigator.serviceWorker.ready).then(async reg=>{
+      const workerURL=await warmSimulationWorker();
+      const urls=[workerURL,...performance.getEntriesByType("resource").map(x=>x.name)].filter(x=>{const u=new URL(x);return u.origin===location.origin&&/\.(js|css|woff2?)(\?|$)/.test(u.pathname);});
       const channel=new MessageChannel();channel.port1.onmessage=e=>{if(active)setOfflineReady(!!e.data?.ready);channel.port1.close();};
       reg.active?.postMessage({type:"WARM",urls},[channel.port2]);
     }).catch(()=>{if(active)setOfflineReady(false);});
