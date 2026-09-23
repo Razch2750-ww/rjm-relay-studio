@@ -17,7 +17,7 @@ function clearLabels(layout){
 }
 
 test("labels follow the source's free side at all four rotations without changing terminals",()=>{
-  const expected=[[430,500],[440,390],[550,400],[540,510]];
+  const expected=[[420,520],[440,380],[580,400],[560,540]];
   for(const [i,rotation] of [0,90,180,270].entries()){
     const p=blankProject(),source=newNode("source3","power",400,400,"SUP"),load=newNode("motor3","power",1000,900,"M1");
     source.rotation=rotation;p.nodes=[source,load];p.wires=[{id:"wire",from:pin(source,"L1"),to:pin(load,"U"),label:"Power supply",color:"R",bends:[]}];
@@ -46,10 +46,10 @@ test("existing wiring presets retain connections and all annotations fit export 
   }
 });
 
-test("all bundled sheets route each conductor in a separate orthogonal lane",()=>{
+test("bundled sheets separate unrelated conductors and allow same-net overlap",()=>{
   for(const preset of PROJECT_PRESETS)for(const sheet of ["power","control"]){
     const layout=layoutDiagram(preset.create(),sheet);
-    layout.routes.forEach((r,i)=>{const blocked=routingContext(layout.routes.slice(0,i),r.points[0],r.points.at(-1));
+    layout.routes.forEach((r,i)=>{const blocked=routingContext(layout.routes.slice(0,i),r.points[0],r.points.at(-1),r.net);
       for(let j=1;j<r.points.length;j++){const a=r.points[j-1],b=r.points[j];assert.ok(Math.abs(a.x-b.x)<.001||Math.abs(a.y-b.y)<.001,"every segment is orthogonal");assert.equal(blocked(a,b),false,preset.id+" "+r.wire.id+" cannot stack on another wire");}
     });
   }

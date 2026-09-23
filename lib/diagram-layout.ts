@@ -1,8 +1,9 @@
-import { kind, nodeSize, portPosition, ports } from "./circuit.ts";
+import { kind, nodeSize, portPosition, ports, SNAP, snap } from "./circuit.ts";
 import type { Node, Project, Sheet, Wire } from "./circuit.ts";
 import { componentAmperage,sizeProjectCables } from "./cable-sizing.ts";
 import { routeWire,routingContext } from "./wire-routing.ts";
 import type { RoutedWire } from "./wire-routing.ts";
+import { wireNets } from "./wire-colors.ts";
 
 export type Point = {x:number;y:number};
 export type Rect = {x:number;y:number;w:number;h:number};
@@ -16,24 +17,26 @@ export function nodeBounds(n:Node):Rect {
   return {x:n.x+(size.width-w)/2,y:n.y+(size.height-h)/2,w,h};
 }
 export function alignNode(n:Node,x:number,y:number,nodes:Node[],tolerance=8){
-  const body=nodeBounds({...n,x,y}),axes={x:[body.x,body.x+body.w/2,body.x+body.w],y:[body.y,body.y+body.h/2,body.y+body.h]};
-  const result:{x:number;y:number;guideX?:number;guideY?:number}={x:Math.round(x/20)*20,y:Math.round(y/20)*20};
+  const result:{x:number;y:number;guideX?:number;guideY?:number}={x:snap(x),y:snap(y)};
+  const own=ports(n).map(p=>portPosition({...n,x,y},p.name));
   for(const axis of ["x","y"] as const){
     let best=tolerance;
-    for(const other of nodes){if(other.id===n.id||other.sheet!==n.sheet)continue;const b=nodeBounds(other),size=axis==="x"?b.w:b.h;
-      for(const target of [b[axis],b[axis]+size/2,b[axis]+size])for(const own of axes[axis])if(Math.abs(target-own)<best){best=Math.abs(target-own);result[axis]=(axis==="x"?x:y)+target-own;result[axis==="x"?"guideX":"guideY"]=target;}
+    for(const other of nodes){if(other.id===n.id||other.sheet!==n.sheet)continue;
+      for(const p of ports(other)){const target=portPosition(other,p.name)[axis];
+        for(const point of own)if(Math.abs(target-point[axis])<best){best=Math.abs(target-point[axis]);result[axis]=snap((axis==="x"?x:y)+target-point[axis]);result[axis==="x"?"guideX":"guideY"]=target;}
+      }
     }
     result[axis]=Math.max(0,Math.min(10000,result[axis]));
   }
   return result;
 }
-export function wirePoints(w:Wire,nodes:Map<string,Node>,previous:RoutedWire[]=[]):Point[] {
+export function wirePoints(w:Wire,nodes:Map<string,Node>,previous:RoutedWire[]=[],labels:Rect[]=[],net?:string):Point[] {
   const [a,ap]=w.from.split(":"),[b,bp]=w.to.split(":"),na=nodes.get(a),nb=nodes.get(b);
   if(!na||!nb)return [];
   const start=portPosition(na,ap),end=portPosition(nb,bp);
-  const stub=(n:Node,name:string,p:Point)=>{const t=ports(n).find(t=>t.name===name)!,size=nodeSize(n),dx=t.x===0?-1:t.x===size.width?1:0,dy=dx?0:t.y===0?-1:1,a=n.rotation*Math.PI/180;return {x:p.x+24*Math.round(dx*Math.cos(a)-dy*Math.sin(a)),y:p.y+24*Math.round(dx*Math.sin(a)+dy*Math.cos(a))};};
-  const obstacles=[...nodes.values()].map(n=>padded(nodeBounds(n),8));
-  return routeWire(start,stub(na,ap,start),stub(nb,bp,end),end,obstacles,previous,w.bends);
+  const stub=(n:Node,name:string,p:Point)=>{if(n.type==="tap")return p;const t=ports(n).find(t=>t.name===name)!,size=nodeSize(n),dx=t.x===0?-1:t.x===size.width?1:0,dy=dx?0:t.y===0?-1:1,a=n.rotation*Math.PI/180;return {x:p.x+SNAP*Math.round(dx*Math.cos(a)-dy*Math.sin(a)),y:p.y+SNAP*Math.round(dx*Math.sin(a)+dy*Math.cos(a))};};
+  const obstacles=[...[...nodes.values()].filter(n=>kind(n)!=="junction").map(n=>padded(nodeBounds(n),8)),...labels.map(b=>padded(b,10))];
+  return routeWire(start,stub(na,ap,start),stub(nb,bp,end),end,obstacles,previous,w.bends.map(p=>({x:snap(p.x),y:snap(p.y)})).filter(p=>!labels.some(b=>crossesBox(p,p,padded(b,10)))),net,labels.map(b=>padded(b,10)));
 }
 const padded=(b:Rect,p:number):Rect=>({x:b.x-p,y:b.y-p,w:b.w+p*2,h:b.h+p*2});
 export const overlaps=(a:Rect,b:Rect)=>a.x<b.x+b.w&&a.x+a.w>b.x&&a.y<b.y+b.h&&a.y+a.h>b.y;
@@ -70,7 +73,7 @@ export function terminalLabel(n:Node,name:string){
 }
 function candidates(body:Rect,w:number,h:number,sides:number[]):Rect[] {
   const result:Rect[]=[];
-  for(const gap of [GAP,38,70,110,170,250])for(const side of sides)for(const offset of [0,40,-40,80,-80]){
+  for(const gap of [8,20,40,60,80,100,120])for(const side of sides)for(const offset of [0,20,-20,40,-40,60,-60,80,-80,100,-100,120,-120]){
     const cx=body.x+body.w/2,cy=body.y+body.h/2;
     result.push(side===0?{x:cx-w/2+offset,y:body.y-gap-h,w,h}:side===1?{x:body.x+body.w+gap,y:cy-h/2+offset,w,h}:side===2?{x:cx-w/2+offset,y:body.y+body.h+gap,w,h}:{x:body.x-gap-w,y:cy-h/2+offset,w,h});
   }
@@ -79,17 +82,41 @@ function candidates(body:Rect,w:number,h:number,sides:number[]):Rect[] {
 export function layoutDiagram(project:Project,sheet:Sheet){
   const sizing=sizeProjectCables(project).recommendations;
   const nodes=project.nodes.filter(n=>n.sheet===sheet),byId=new Map(nodes.map(n=>[n.id,n]));
-  const routes:{wire:Wire;points:Point[]}[]=[];
-  // Give manually positioned segments priority; reserve each lane for subsequent wires.
-  const wires=project.wires.filter(w=>byId.has(w.from.split(":")[0])).sort((a,b)=>Number(!!b.bends.length)-Number(!!a.bends.length));
-  for(const wire of wires)routes.push({wire,points:wirePoints(wire,byId,routes)});
-  const routingConflicts=routes.filter((r,i)=>{const blocked=routingContext(routes.slice(0,i),r.points[0],r.points.at(-1)!);return r.points.slice(1).some((p,j)=>blocked(r.points[j],p));}).map(r=>r.wire.id);
-  const segments:Segment[]=routes.flatMap(r=>r.points.slice(1).map((b,i)=>({a:r.points[i],b})));
-  const bodies=nodes.map(nodeBounds);
-  const occupied:Rect[]=bodies.map(b=>padded(b,10));
-  for(const n of nodes)for(const port of ports(n))occupied.push(padded(terminalLabel(n,port.name).box,3));
+  const bodies=nodes.filter(n=>n.type!=="tap").map(nodeBounds);
+  const occupied:Rect[]=bodies.map(b=>padded(b,6));
+  for(const n of nodes)if(n.type==="tap")occupied.push({x:n.x-8,y:n.y-8,w:16,h:16});
+  const stems:Segment[]=[];
+  for(const n of nodes)for(const port of ports(n)){
+    if(n.type==="tap")continue;
+    const t=terminalLabel(n,port.name);occupied.push(padded(t.box,2));
+    const a=portPosition(n,port.name),directions=[{x:0,y:-1},{x:1,y:0},{x:0,y:1},{x:-1,y:0}],d=directions[t.side];
+    stems.push({a,b:{x:a.x+d.x*SNAP,y:a.y+d.y*SNAP}});
+  }
   const nodeLabels=new Map<string,Label>(),wireLabels=new Map<string,Label>();
-  // Clearance is geometry, not a background painted over the conductors.
+  // Anchor descriptions beside their symbol first, then route cables around them.
+  // Never move a component label into a remote annotation bank.
+  for(const n of nodes){
+    if(n.type==="tap")continue;
+    const body=nodeBounds(n),amperage=componentAmperage(n),canTrip=["breaker","rcd","overload","pfr","motor"].includes(kind(n));
+    const counts=[0,0,0,0];for(const p of ports(n))counts[terminalLabel(n,p.name).side]++;
+    const first=n.rotation/90,sides=[0,1,2,3].map(s=>(s+first)%4).sort((a,b)=>counts[a]-counts[b]);
+    let picked:Label|undefined;
+    const alternatives:Label[]=[];
+    for(const wrap of [140,100]){
+      const lines=n.label===n.tag?[]:wrapLabel(n.label,wrap);
+      const w=Math.max(textWidth(n.tag+(canTrip?" · TRIP":""),18,true),textWidth(amperage??"",14),...lines.map(s=>textWidth(s,14)))+12,h=28+(lines.length+(amperage?1:0))*18;
+      const choices=candidates(body,w,h,sides).map(b=>({...b,lines,amperage}));alternatives.push(...choices);
+      picked=choices.find(b=>!occupied.some(o=>overlaps(b,o))&&!stems.some(s=>crossesBox(s.a,s.b,padded(b,12))));if(picked)break;
+    }
+    // A user can physically overlap devices; keep that conflict local and visible.
+    picked??=alternatives.reduce((best,b)=>occupied.filter(o=>overlaps(b,o)).length<occupied.filter(o=>overlaps(best,o)).length?b:best);
+    nodeLabels.set(n.id,picked);occupied.push(padded(picked,6));
+  }
+  const nets=wireNets(project),routes:{wire:Wire;points:Point[];net?:string}[]=[];
+  const wires=project.wires.filter(w=>byId.has(w.from.split(":")[0])).sort((a,b)=>Number(!!b.bends.length)-Number(!!a.bends.length));
+  for(const wire of wires){const net=nets.get(wire.id);routes.push({wire,net,points:wirePoints(wire,byId,routes,[...nodeLabels.values()],net)});}
+  const routingConflicts=routes.filter((r,i)=>{const blocked=routingContext(routes.slice(0,i),r.points[0],r.points.at(-1)!,r.net);return r.points.slice(1).some((p,j)=>blocked(r.points[j],p));}).map(r=>r.wire.id);
+  const segments:Segment[]=routes.flatMap(r=>r.points.slice(1).map((b,i)=>({a:r.points[i],b})));
   const free=(box:Rect)=>!occupied.some(b=>overlaps(box,b))&&!segments.some(s=>crossesBox(s.a,s.b,padded(box,5)));
   const outerX=Math.max(0,...bodies.map(b=>b.x+b.w),...segments.flatMap(s=>[s.a.x,s.b.x]))+GAP;
   const outerHeight=Math.max(700,...bodies.map(b=>b.y+b.h),...segments.flatMap(s=>[s.a.y,s.b.y]));
@@ -103,16 +130,6 @@ export function layoutDiagram(project:Project,sheet:Sheet){
     }
     occupied.push(padded(box,6));return {...box,lines};
   };
-  for(const n of nodes){
-    const body=nodeBounds(n),lines=kind(n)==="text"?wrapLabel(n.label):n.label===n.tag?[]:wrapLabel(n.label);
-    const canTrip=["breaker","rcd","overload","pfr","motor"].includes(kind(n));
-    const amperage=componentAmperage(n);
-    const w=Math.max(textWidth(n.tag+(canTrip?" · TRIP":""),18,true),textWidth(amperage??"",14),...lines.map(s=>textWidth(s,14)))+12,h=28+(lines.length+(amperage?1:0))*18;
-    // Prefer a side without terminals; that side turns with the component.
-    const counts=[0,0,0,0];for(const p of ports(n))counts[terminalLabel(n,p.name).side]++;
-    const first=n.rotation/90,sides=[0,1,2,3].map(s=>(s+first)%4).sort((a,b)=>counts[a]-counts[b]);
-    nodeLabels.set(n.id,{...place(candidates(body,w,h,sides),lines),amperage});
-  }
   for(const {wire,points} of routes){
     if(points.length<2)continue;
     const annotation=`${wire.label?wire.label+" · ":""}${wire.cable?wire.cable.section.toLocaleString("id-ID")+" mm²":"mm² belum diisi"}${wire.cable?.sizing==="auto"&&sizing.get(wire.id)?.section===null?" · AUTO?":""}`;

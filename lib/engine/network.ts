@@ -31,15 +31,15 @@ export function makeNetwork(p:Project,r:Runtime,states:Record<string,DeviceState
     }
     if(["breaker","fuse","rcd"].includes(k) && on && !s.tripped)powerPoles();
     if(k==="contactor" && (driven[n.tag]||fault(r,n.id,"welded")))powerPoles();
-    if(k==="overload"){ powerPoles();link(s.tripped?"97":"95",s.tripped?"98":"96"); }
+    if(k==="overload")powerPoles();
     if(k==="switch" && on)link("1","2");
     if(k==="start" && !!r.manual[n.id])link("1","2");
     if(["stop","estop"].includes(k) && !r.manual[n.id]&&!fault(r,n.id,"pressed"))link("1","2");
-    if(k==="no" && driven[n.tag])link("1","2");
-    if(k==="nc" && !driven[n.tag])link("1","2");
+    if(k==="no" && driven[n.tag])link(ports(n)[0].name,ports(n)[1].name);
+    if(k==="nc" && !driven[n.tag])link(ports(n)[0].name,ports(n)[1].name);
     if(k==="changeover")link("11",driven[n.tag]?"14":"12");
     if(k==="terminal")link("1","2");
-    if(k==="junction"){link("T","B");link("T","L");link("T","R");}
+    if(k==="junction")for(const port of ports(n).slice(1))link(ports(n)[0].name,port.name);
     if(k==="bus" && String(n.params.net??"").trim())join(pin(n,"A"),"@"+String(n.params.net).trim(),"bus");
     if(k==="selector"){
       const mode=String(r.manual[n.id]??n.params.position);

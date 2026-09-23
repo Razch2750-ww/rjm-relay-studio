@@ -1,7 +1,8 @@
+import { SNAP, snap } from "./circuit.ts";
 export type Point={x:number;y:number};
 export type Box={x:number;y:number;w:number;h:number};
-export type RoutedWire={points:Point[]};
-const EPS=.001,LANE=12;
+export type RoutedWire={points:Point[];net?:string};
+const EPS=.001,LANE=SNAP;
 const same=(a:Point,b:Point)=>Math.abs(a.x-b.x)<EPS&&Math.abs(a.y-b.y)<EPS;
 const length=(a:Point,b:Point)=>Math.abs(a.x-b.x)+Math.abs(a.y-b.y);
 const key=(n:number)=>Math.round(n*1000);
@@ -35,15 +36,16 @@ export function addWireBend(points:Point[]):Point[]{
   if(points.length<2)return points;
   let index=0;for(let i=1;i<points.length-1;i++)if(length(points[i],points[i+1])>length(points[index],points[index+1]))index=i;
   const a=points[index],b=points[index+1],vertical=Math.abs(a.x-b.x)<EPS;
-  const first={x:a.x+(b.x-a.x)/3,y:a.y+(b.y-a.y)/3},last={x:a.x+2*(b.x-a.x)/3,y:a.y+2*(b.y-a.y)/3};
-  const offset=(p:Point)=>vertical?{x:p.x+36,y:p.y}:{x:p.x,y:p.y+36};
+  const first={x:snap(a.x+(b.x-a.x)/3),y:snap(a.y+(b.y-a.y)/3)},last={x:snap(a.x+2*(b.x-a.x)/3),y:snap(a.y+2*(b.y-a.y)/3)};
+  const offset=(p:Point)=>vertical?{x:p.x+2*SNAP,y:p.y}:{x:p.x,y:p.y+2*SNAP};
   return orthogonalPoints([...points.slice(0,index+1),first,offset(first),offset(last),last,...points.slice(index+1)]);
 }
 
 type Edge={a:Point;b:Point;ends:Point[]};
-export function routingContext(previous:RoutedWire[],start:Point,end:Point){
+export function routingContext(previous:RoutedWire[],start:Point,end:Point,net?:string){
   const horizontal=new Map<number,Edge[]>(),vertical=new Map<number,Edge[]>();
   for(const r of previous){
+    if(net&&r.net===net)continue;
     const ends=[r.points[0],r.points.at(-1)!].filter(Boolean);
     r.points.slice(1).forEach((b,i)=>{const a=r.points[i],flat=Math.abs(a.y-b.y)<EPS,map=flat?horizontal:vertical,k=key(flat?a.y:a.x);if(!map.has(k))map.set(k,[]);map.get(k)!.push({a,b,ends});});
   }
@@ -54,7 +56,7 @@ export function routingContext(previous:RoutedWire[],start:Point,end:Point){
       const hi=Math.min(Math.max(a[axis],b[axis]),Math.max(other.a[axis],other.b[axis]));
       if(hi-lo<EPS)continue;
       // Only the terminal's short shared stem may coincide. Crossings are not joins.
-      const shared=[start,end].find(p=>other.ends.some(q=>same(p,q))&&Math.abs(p[flat?"y":"x"]-a[flat?"y":"x"])<EPS&&Math.max(Math.abs(lo-p[axis]),Math.abs(hi-p[axis]))<=24+EPS);
+      const shared=[start,end].find(p=>other.ends.some(q=>same(p,q))&&Math.abs(p[flat?"y":"x"]-a[flat?"y":"x"])<EPS&&Math.max(Math.abs(lo-p[axis]),Math.abs(hi-p[axis]))<=SNAP+EPS);
       if(!shared)return true;
     }
     return false;
@@ -82,11 +84,11 @@ function connect(a:Point,b:Point,boxes:Box[],blocked:(a:Point,b:Point)=>boolean,
   if(Math.abs(a.x-b.x)<EPS||Math.abs(a.y-b.y)<EPS)candidates.push([a,b]);
   candidates.push([a,{x:b.x,y:a.y},b],[a,{x:a.x,y:b.y},b]);
   const xs=new Set<number>([a.x,b.x]),ys=new Set<number>([a.y,b.y]);
-  for(const p of [a,b])for(const offset of [12,-12,24,-24,36,-36,60,-60,96,-96,144,-144,240,-240]){xs.add(p.x+offset);ys.add(p.y+offset);}
-  for(const box of boxes){xs.add(box.x-LANE);xs.add(box.x+box.w+LANE);ys.add(box.y-LANE);ys.add(box.y+box.h+LANE);}
+  for(const p of [a,b])for(const offset of [20,-20,40,-40,60,-60,100,-100,160,-160,240,-240]){xs.add(p.x+offset);ys.add(p.y+offset);}
+  for(const box of boxes){xs.add(Math.floor(box.x/LANE)*LANE-LANE);xs.add(Math.ceil((box.x+box.w)/LANE)*LANE+LANE);ys.add(Math.floor(box.y/LANE)*LANE-LANE);ys.add(Math.ceil((box.y+box.h)/LANE)*LANE+LANE);}
   for(const x of xs)candidates.push([a,{x,y:a.y},{x,y:b.y},b]);
   for(const y of ys)candidates.push([a,{x:a.x,y},{x:b.x,y},b]);
-  for(const dx of [12,-12,24,-24,48,-48])for(const dy of [12,-12,24,-24,48,-48]){
+  for(const dx of [20,-20,40,-40,80,-80])for(const dy of [20,-20,40,-40,80,-80]){
     candidates.push([a,{x:a.x+dx,y:a.y},{x:a.x+dx,y:b.y+dy},{x:b.x,y:b.y+dy},b]);
     candidates.push([a,{x:a.x,y:a.y+dy},{x:b.x+dx,y:a.y+dy},{x:b.x+dx,y:b.y},b]);
   }
@@ -118,29 +120,30 @@ function connect(a:Point,b:Point,boxes:Box[],blocked:(a:Point,b:Point)=>boolean,
 }
 const cost=(ps:Point[])=>ps.slice(1).reduce((sum,p,i)=>sum+length(ps[i],p),ps.length*18);
 
-export function routeWire(start:Point,sa:Point,sb:Point,end:Point,boxes:Box[],previous:RoutedWire[],bends:Point[]=[]):Point[]{
-  const blocked=routingContext(previous,start,end);
+export function routeWire(start:Point,sa:Point,sb:Point,end:Point,boxes:Box[],previous:RoutedWire[],bends:Point[]=[],net?:string,hardBoxes:Box[]=[]):Point[]{
+  const blocked=routingContext(previous,start,end,net);
   const manual=orthogonalPoints([start,...bends,end]);
-  if(bends.length&&manual.slice(1).every((p,i)=>!blocked(manual[i],p)))return manual;
+  const manualBoxes=boxes.filter(box=>!enters(start,start,box)&&!enters(end,end,box));
+  if(bends.length&&manual.slice(1).every((p,i)=>!blocked(manual[i],p)&&!manualBoxes.some(box=>enters(manual[i],p,box))))return manual;
   const waypoints=bends.length?[start,...bends,end]:[start,sa,sb,end],result:Point[]=[start];
   for(let i=1;i<waypoints.length;i++){
     const a=waypoints[i-1],b=waypoints[i];
     // Terminal stems are permitted through their own device clearance, never another wire.
-    const relevant=boxes.filter(box=>!enters(a,a,box)&&!enters(b,b,box));
+    const relevant=[...boxes.filter(box=>!enters(a,a,box)&&!enters(b,b,box)),...hardBoxes];
     let path=connect(a,b,relevant,blocked,previous);
     // Crowded/overlapping devices can obstruct escape: preserve electrical endpoints and
     // conductor separation; the component overlap remains visible for the drafter to fix.
-    if(!path.length)path=connect(a,b,[],blocked,previous);
+    if(!path.length)path=connect(a,b,hardBoxes,blocked,previous);
     if(!path.length&&i<waypoints.length-1){
       // An imported elbow can sit on an existing crossing; move that elbow to a free lane.
-      for(const [dx,dy] of [[12,0],[-12,0],[0,12],[0,-12],[24,12],[-24,-12]]){
-        const shifted={x:b.x+dx,y:b.y+dy},candidate=connect(a,shifted,[],blocked,previous);
+      for(const [dx,dy] of [[20,0],[-20,0],[0,20],[0,-20],[40,20],[-40,-20]]){
+        const shifted={x:b.x+dx,y:b.y+dy},candidate=connect(a,shifted,hardBoxes,blocked,previous);
         if(candidate.length){waypoints[i]=shifted;path=candidate;break;}
       }
     }
-    if(!path.length&&bends.length)return routeWire(start,sa,sb,end,boxes,previous);
+    if(!path.length&&bends.length)return routeWire(start,sa,sb,end,boxes,previous,[],net,hardBoxes);
     if(!path.length){
-      const escaped=connect(start,end,[],blocked,previous);
+      const escaped=connect(start,end,hardBoxes,blocked,previous);
       if(escaped.length)return escaped;
       // A terminal placed exactly on an unrelated crossing has no free exit.
       // Keep its connection visible; the editor reports this placement conflict.

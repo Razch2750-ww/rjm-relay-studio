@@ -40,9 +40,9 @@ export function conductorLinks(project:Project):ConductorLink[]{
     const k=kind(n),valid=new Set(ports(n).map(p=>p.name));
     const link=(a:string,b:string)=>{if(valid.has(a)&&valid.has(b))edges.push({a:pin(n,a),b:pin(n,b),nodeId:n.id});};
     if(["breaker","fuse","rcd","contactor","overload"].includes(k))for(let i=0;i<poles(n);i++)link(String(i*2+1),String(i*2+2));
-    if(k==="overload"){link("95","96");link("97","98");}
-    if(["switch","start","stop","estop","no","nc","limit","terminal"].includes(k))link("1","2");
-    if(k==="junction")for(const p of ["B","L","R"])link("T",p);
+    if(["switch","start","stop","estop","limit","terminal"].includes(k))link("1","2");
+    if(k==="no"||k==="nc")link(ports(n)[0].name,ports(n)[1].name);
+    if(k==="junction")for(const p of ports(n).slice(1))link(ports(n)[0].name,p.name);
     if(k==="bus"&&String(n.params.net??"").trim())edges.push({a:pin(n,"A"),b:"@"+String(n.params.net).trim(),nodeId:n.id});
     if(k==="changeover"){link("11","12");link("11","14");}
     if(k==="pressure"){link("C","OK");link("C","FAULT");}
@@ -54,4 +54,18 @@ export function conductorLinks(project:Project):ConductorLink[]{
     }
   }
   return edges;
+}
+
+/** Physical wire nets only. Equal colours or a shared upstream supply do not bypass a contact. */
+export function wireNets(project:Project):Map<string,string>{
+  const parent=new Map<string,string>();
+  const root=(x:string):string=>{const p=parent.get(x);if(!p){parent.set(x,x);return x;}if(p===x)return x;const r=root(p);parent.set(x,r);return r;};
+  const join=(a:string,b:string)=>parent.set(root(a),root(b));
+  for(const w of project.wires)join(w.from,w.to);
+  for(const n of project.nodes){
+    const ps=ports(n);
+    if(["junction","terminal"].includes(kind(n)))for(const p of ps.slice(1))join(pin(n,ps[0].name),pin(n,p.name));
+    if(kind(n)==="bus"&&String(n.params.net??"").trim())join(pin(n,"A"),"@"+String(n.params.net).trim());
+  }
+  return new Map(project.wires.map(w=>[w.id,root(w.from)]));
 }

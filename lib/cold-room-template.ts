@@ -16,7 +16,7 @@ export function coldRoomTemplate(){
  for(const b of branches){
   add("b"+b.id,"breaker3","QF"+(p.nodes.filter(n=>n.type==="breaker3").length+2),"power",b.x,450,{rating:b.rating,voltage:380});
   add("k"+b.id,"contactor3",b.k,"power",b.x,650,{rating:25});
-  if(b.ol)add("ol"+b.id,"overload",b.id==="comp"?"OL1":"OL2","power",b.x-40,830,{rating:b.ol,thermalSeconds:30,minCurrent:b.id==="comp"?7:2,maxCurrent:b.id==="comp"?10:3});
+  if(b.ol)add("ol"+b.id,"overload",b.id==="comp"?"OL1":"OL2","power",b.x,830,{rating:b.ol,thermalSeconds:30,minCurrent:b.id==="comp"?7:2,maxCurrent:b.id==="comp"?10:3});
   add(b.id,b.type,b.tag,"power",b.x,1110,{voltage:380,current:b.current,...b.params},b.id==="comp"?"COMPRESSOR":b.id==="fan"?"EVAPORATOR · 2 FAN":"DEFROST · 3 × 1.5 kW");
   for(let i=0;i<3;i++){w("p"+i,"A","b"+b.id,String(i*2+1),10);w("b"+b.id,String(i*2+2),"k"+b.id,String(i*2+1),2.5);if(b.ol)w("k"+b.id,String(i*2+2),"ol"+b.id,String(i*2+1),2.5);w(b.ol?"ol"+b.id:"k"+b.id,String(i*2+2),b.id,["U","V","W"][i],2.5,10);}
   w(b.id,"PE","pPE","A",2.5,10);

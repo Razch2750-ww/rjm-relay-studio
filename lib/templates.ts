@@ -27,7 +27,7 @@ export function jagoTemplate():Project {
     add("k"+b.id,"contactor3",b.k,b.id==="cdu"?"Di dalam CDU":"Kontaktor "+b.id,"power",b.x,660);
     add(b.id,b.load,b.id==="cdu"?"CDU1":b.id==="fan"?"EV1":"HT1",b.label,"power",b.x,1050);
     let from="k"+b.id;
-    if(b.id!=="heater"){add("f"+b.id,"overload",b.id==="cdu"?"F1":"F2",b.id==="cdu"?"CDU · rating belum diisi":"FAN · rating belum diisi","power",b.x-40,820,{rating:0});from="f"+b.id;}
+    if(b.id!=="heater"){add("f"+b.id,"overload",b.id==="cdu"?"F1":"F2",b.id==="cdu"?"CDU · rating belum diisi":"FAN · rating belum diisi","power",b.x,820,{rating:0});from="f"+b.id;}
     ["R","S","T"].forEach((phase,i)=>{
       wire("p"+phase,"A","b"+b.id,String(i*2+1),phase,phase,380+i*20);
       wire("b"+b.id,String(i*2+2),"k"+b.id,String(i*2+1),"",phase);

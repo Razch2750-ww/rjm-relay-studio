@@ -56,7 +56,7 @@ function motorBranch(b:Drawing,id:string,x:number,config:{m?:string;rating?:numb
     else feeds=feeder(b,"b-"+id,config.m,config.rating??0,x,520);
   }
   b.add("k-"+id,"contactor3",k,label,"power",x,730);
-  if(f)b.add("f-"+id,"overload",f,config.part??"Setelan belum diisi","power",x-30,940,{rating:0});
+  if(f)b.add("f-"+id,"overload",f,config.part??"Setelan belum diisi","power",x,940,{rating:0});
   b.add(id,type,id.toUpperCase(),label,"power",x,1210,{voltage:single?230:Number(b.nodes.supply.params.voltage)});
   const inputs=single?[feeds[0],["pN","A"] as Endpoint]:feeds;
   inputs.forEach((feed,i)=>{

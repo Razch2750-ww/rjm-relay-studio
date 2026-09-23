@@ -2,6 +2,9 @@ import { newId } from "./id.ts";
 import { z } from "zod";
 
 export type Params = Record<string, string | number | boolean>;
+// One drafting grid for component origins, terminal centres and cable bends.
+export const SNAP = 20, PIN_PITCH = 40, PIN_RADIUS = 3.5;
+export const snap = (value:number) => Math.round(value/SNAP)*SNAP;
 export type Sheet = "power" | "control" | `sheet-${string}`;
 export type Node = { id: string; type: string; tag: string; label: string; x: number; y: number; rotation: number; sheet: Sheet; params: Params };
 export type Cable = { material:"Cu"|"Al"; section:number; length:number; cores:number; insulation:"PVC"|"XLPE"; ambient:number; method:"A2"|"B2"|"C"; grouping:number; mode:"simple"|"advanced"; ampacity:number; resistance:number; sizing?:"auto"|"manual" };
@@ -95,6 +98,9 @@ CATALOG.voltmeter={name:"Voltmeter",category:"Lainnya",kind:"meter",defaults:{mo
 CATALOG.ammeter={...CATALOG.voltmeter,name:"Ampere meter / CT",defaults:{mode:"current",wire:""},description:"Pilih ID kabel yang diukur oleh CT; terminal tegangan tetap terisolasi."};
 CATALOG.multimeter={...CATALOG.voltmeter,name:"Multifunction meter",defaults:{mode:"multi",wire:"",voltage:400}};
 CATALOG.transformer={name:"Trafo kontrol",category:"Sumber",kind:"transformer",defaults:{voltage:400,secondary:230,va:100,frequency:50},description:"Trafo ideal terisolasi P1–P2 / S1–S2. Beban sekunder dipantulkan ke primer, dibatasi rating VA."};
+CATALOG.overloadNC={...CATALOG.nc,name:"Overload · NC 95–96",description:"Kontak bantu terpisah. Tag sama dengan overload daya; membuka saat overload trip."};
+CATALOG.overloadNO={...CATALOG.no,name:"Overload · NO 97–98",description:"Kontak bantu terpisah. Tag sama dengan overload daya; menutup saat overload trip."};
+CATALOG.tap={name:"Pick point · cabang kabel",category:"Lainnya",kind:"junction",defaults:{},description:"Titik cabang pada kabel. Klik titik ini untuk menyambungkan kabel lain."};
 for(const d of Object.values(CATALOG)){
   if(!["text","junction","bus"].includes(d.kind))Object.assign(d.defaults,{brand:"Custom",model:""});
   if(d.kind==="source")Object.assign(d.defaults,{frequency:d.poles===0?0:50,faultKA:0});
@@ -116,16 +122,26 @@ export const controllerPins = (n: Node) => n.type === "xr70"
   : { common:"1",comp:"4",fan:"5",defCommon:"1",defrost:"2",defNC:"3",line:"6",neutral:"7",evap:"8",sensorCommon:"9",room:"10" };
 export const selectorPositions = (n: Node) => ["selector12","selector102"].includes(n.type) ? ["2","OFF","1"] : ["AUTO","OFF","MAN"];
 export type Port = { name: string; x: number; y: number };
-export const nodeSize = (n: Node) => ({ width: n.type==="bus"?90:CATALOG[n.type]?.width ?? 120, height: n.type==="bus"?40:n.type === "overload" || CATALOG[n.type]?.kind === "controller" ? 140 : 100 });
+export const nodeSize = (n: Node) => {
+  const d=CATALOG[n.type];
+  if(n.type==="tap")return {width:0,height:0};
+  if(d.kind==="junction")return {width:40,height:40};
+  if(d.kind==="bus")return {width:80,height:40};
+  const count=d.kind==="controller"?(n.type==="xr70"?12:10):d.kind==="source"?(d.poles===3?5:d.poles===0?2:3):["motor","heater"].includes(d.kind)&&n.params.neutralRequired?4:d.poles??1;
+  return {width:d.kind==="text"?240:Math.max(120,count*PIN_PITCH),height:d.kind==="controller"?160:120};
+};
 export const number = (n: Node, key: string, fallback = 0) => typeof n.params[key] === "number" && Number.isFinite(n.params[key]) ? n.params[key] as number : fallback;
 export const kind = (n: Node) => CATALOG[n.type]?.kind ?? "text";
 export const poles = (n: Node) => CATALOG[n.type]?.poles ?? 1;
 export const pin = (n: Node | string, name: string) => (typeof n === "string" ? n : n.id) + ":" + name;
 export function ports(n: Node): Port[] {
   const d = CATALOG[n.type], { width: w, height: h } = nodeSize(n);
-  const row = (names: string[], y: number) => names.map((name, i) => ({ name, x: (i + 1) * w / (names.length + 1), y }));
+  const row = (names: string[], y: number) => names.map((name, i) => ({ name, x: w/2+(i-(names.length-1)/2)*PIN_PITCH, y }));
   const pair = (a: string, b: string) => [{ name: a, x: w / 2, y: 0 }, { name: b, x: w / 2, y: h }];
   if (d.kind === "text") return [];
+  if(n.type==="tap")return [{name:"A",x:0,y:0}];
+  if(n.type==="overloadNC")return pair("95","96");
+  if(n.type==="overloadNO")return pair("97","98");
   if (d.kind === "source") return row(d.poles === 3 ? ["L1", "L2", "L3", "N", "PE"] : d.poles === 0 ? ["+", "-"] : ["L", "N", "PE"], h);
   if (d.kind === "controller") return row(Array.from({length:n.type==="xr70"?12:10},(_,i)=>String(i+1)), h);
   if (d.kind === "pfr") return [...row(["L1","L2","L3"], 0), ...row(["Tc","Tb","Ta"], h)];
@@ -139,11 +155,7 @@ export function ports(n: Node): Port[] {
   if (d.kind === "changeover") return [...row(["11"],0),...row(["12","14"],h)];
   if (d.kind === "selector") return n.params.mapping?[...row(["13","23"],0),...row(["14","24"],h)]:[...row(["C"],0),...row(n.type==="selector12"?["1","2"]:["MAN","AUTO"],h)];
   if (d.kind === "pressure") return [...row(["C"],0),...row(["OK","FAULT"],h)];
-  if (d.kind === "overload") return [
-    {name:"1",x:25,y:0},{name:"3",x:60,y:0},{name:"5",x:95,y:0},{name:"95",x:150,y:0},{name:"97",x:195,y:0},
-    {name:"2",x:25,y:h},{name:"4",x:60,y:h},{name:"6",x:95,y:h},{name:"96",x:150,y:h},{name:"98",x:195,y:h},
-  ];
-  if (["breaker","fuse","rcd","contactor"].includes(d.kind)) return [...row(Array.from({length:d.poles!},(_,i)=>String(i*2+1)),0),...row(Array.from({length:d.poles!},(_,i)=>String(i*2+2)),h)];
+  if (["breaker","fuse","rcd","contactor","overload"].includes(d.kind)) return [...row(Array.from({length:d.poles!},(_,i)=>String(i*2+1)),0),...row(Array.from({length:d.poles!},(_,i)=>String(i*2+2)),h)];
   return pair("1","2");
 }
 export function portPosition(n: Node, name: string) {
@@ -184,7 +196,7 @@ const schema = z.object({
   simulation:z.object({at:z.string().max(40),seconds:positive,watts:positive,maximumCurrent:positive,phaseCurrent:z.record(positive),warnings:z.array(z.string().max(1000)).max(1000),events:z.array(eventSchema).max(1000),scenarios:z.array(scenarioSchema).max(100)}).strict().optional(),
 }).strict();
 export function validateProject(input: unknown): Project {
-  const p = schema.parse(input) as Project;
+  const p = normalizeProject(schema.parse(input) as Project);
   const ids = new Set<string>(), pins = new Set<string>();
   const sheetIds=projectSheets(p).map(s=>s.id);
   if(new Set(sheetIds).size!==sheetIds.length)throw new Error("ID sheet duplikat.");
@@ -204,7 +216,21 @@ export function validateProject(input: unknown): Project {
 }
 export function newNode(type: string, sheet: Sheet, x: number, y: number, tag: string): Node {
   if (!Object.hasOwn(CATALOG,type)) throw new Error("Jenis komponen tidak dikenal.");
-  return { id:newId(),type,sheet,x:Math.min(10000,Math.max(0,Math.round(x/20)*20)),y:Math.min(10000,Math.max(0,Math.round(y/20)*20)),rotation:0,tag,label:CATALOG[type].name,params:{...CATALOG[type].defaults} };
+  return { id:newId(),type,sheet,x:Math.min(10000,Math.max(0,snap(x))),y:Math.min(10000,Math.max(0,snap(y))),rotation:0,tag,label:CATALOG[type].name,params:{...CATALOG[type].defaults} };
+}
+/** Preserve old v1 wiring when moving the overload's auxiliary contacts into separate symbols. */
+export function normalizeProject(input:Project):Project {
+  let changed=false;
+  const p={...input,nodes:input.nodes.map(n=>{const x=snap(n.x),y=snap(n.y);if(x===n.x&&y===n.y)return n;changed=true;return {...n,x,y};}),wires:input.wires.map(w=>({...w}))};
+  const ids=new Set([...p.nodes,...p.wires].map(x=>x.id));
+  for(const main of input.nodes.filter(n=>kind(n)==="overload"))for(const [type,names,offset] of [["overloadNC",["95","96"],160],["overloadNO",["97","98"],320]] as const){
+    if(!p.wires.some(w=>names.some(name=>w.from===pin(main,name)||w.to===pin(main,name))))continue;
+    let id=main.id.slice(0,60)+"-"+type,i=1;while(ids.has(id))id=main.id.slice(0,56)+"-"+type+"-"+i++;
+    ids.add(id);const contact={...newNode(type,main.sheet,Math.min(9840,main.x+offset),main.y,main.tag),id};p.nodes.push(contact);
+    for(const w of p.wires)for(const end of ["from","to"] as const)for(const name of names)if(w[end]===pin(main,name))w[end]=pin(contact,name);
+    changed=true;
+  }
+  return changed?p:input;
 }
 export function blankProject(name = "Rangkaian baru"): Project {
   return {format:"rjm-relay-studio",version:1,id:newId(),name,notes:"",nodes:[],wires:[],calculation:{...defaultCalculation}};
