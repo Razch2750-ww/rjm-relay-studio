@@ -27,7 +27,7 @@ export function checkWiring(p:Project,r:Runtime=freshRuntime()):Diagnostic[]{
  }
  for(const n of p.nodes){
   const k=kind(n),state=r.devices[n.id];
-  if(["contactor","no","nc","changeover"].includes(k)&&!drivers.some(x=>x.tag===n.tag))add("ERROR",n.id,"Kontak tidak memiliki coil / proteksi penggerak dengan tag yang sama.");
+  if(["contactor","no","nc","changeover","auxiliary","timedContact"].includes(k)&&!drivers.some(x=>x.tag===n.tag))add("ERROR",n.id,"Kontak tidak memiliki coil / proteksi penggerak dengan tag yang sama.");
   if(coilKinds.includes(k)){
    if(!ends.has(pin(n,"A1"))||!ends.has(pin(n,"A2")))add("ERROR",n.id,"Coil terbuka: A1 atau A2 belum terhubung.");
    if(p.nodes.filter(x=>coilKinds.includes(kind(x))&&x.tag===n.tag).length>1)add("ERROR",n.id,"Tag coil duplikat; satu tag harus mempunyai satu penggerak.");

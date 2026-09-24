@@ -1,4 +1,4 @@
-import { controllerPins, kind, number, pin, poles, ports, selectorPositions } from "./circuit.ts";
+import { CATALOG, controllerPins, kind, number, pin, poles, ports, selectorPositions } from "./circuit.ts";
 import type { Node, Project } from "./circuit.ts";
 
 import { makeNetwork,phasor } from "./engine/network.ts";
@@ -6,6 +6,7 @@ import { coilKinds,loadKinds,freshState,setting,switched,fault,logEvent,stateOf 
 import type { Runtime,DeviceState } from "./engine/state.ts";
 export { freshRuntime,stateOf } from "./engine/state.ts";
 export type { Runtime,DeviceState } from "./engine/state.ts";
+import { motorWinding } from "./engine/motor-windings.ts";
 import { loadCurrent } from "./engine/load.ts";
 import { protectionStep,protectionRating } from "./engine/protection.ts";
 import { cableStep,resistance } from "./engine/cable.ts";
@@ -38,6 +39,7 @@ export function stepCircuit(project:Project,previous:Runtime,dt=0,tripPass=0):Ru
         if(k==="ton")s.on=input&&s.elapsed>=Math.max(0,number(n,"delay",5));
         if(k==="interval")s.on=input&&s.elapsed<Math.max(0,number(n,"delay",5));
         if(k==="schedule")s.on=input&&timerScheduled(n,r);
+        if(k==="tonoff")s.on=input?base.on||s.elapsed>=Math.max(0,number(n,"delay",5)):base.on&&r.now-s.offAt<Math.max(0,number(n,"offDelay",5));
         if(k==="toff")s.on=input||(base.on&&r.now-s.offAt<Math.max(0,number(n,"delay",5)));
         if(k==="impulse")s.on=input&&!base.input?!base.on:base.on;
         if(k==="cyclic"){
@@ -45,7 +47,14 @@ export function stepCircuit(project:Project,previous:Runtime,dt=0,tripPass=0):Ru
           s.on=input&&s.elapsed%(off+on)>=off;
           s.stage=input?(s.on?"NO":"NC"):"off";
         }
-      }else if(k==="pfr"){
+      }else if(k==="timedContact"){
+        const active=!!net.driven[n.tag];s.input=active;s.elapsed=active?(base.input?base.elapsed+dt:0):0;
+        if(base.input&&!active)s.offAt=r.now;
+        s.on=CATALOG[n.type].timing==="on"?active&&s.elapsed>=number(n,"delay",5):active||(base.on&&r.now-s.offAt<number(n,"delay",5));
+      }else if(k==="auxiliary")s.on=!!net.driven[n.tag];
+      else if(k==="diode")s.on=net.root(pin(n,"A"))===net.root(pin(n,"K"));
+      else if(k==="spd"){s.voltage=net.three(["L1","L2","L3"].map(t=>pin(n,t)));s.on=s.voltage>0;}
+      else if(k==="pfr"){
         s.voltage=net.three(["L1","L2","L3"].map(x=>pin(n,x)));
         const sequence=["L1","L2","L3"].map(x=>net.unique(pin(n,x))?.phase??"?").join("");
         const ordered=n.params.expected==="any"||!n.params.expected||sequence===n.params.expected;
@@ -57,16 +66,18 @@ export function stepCircuit(project:Project,previous:Runtime,dt=0,tripPass=0):Ru
       else if(k==="overload")s.on=!s.tripped;
       else if(loadKinds.includes(k)){
         const pair=k==="motor"||k==="heater"?(poles(n)===0?["+","-"]:["L","N"]):["X1","X2"];
-        const v=poles(n)===3?net.three(["U","V","W"].map(x=>pin(n,x))):net.voltage(pin(n,pair[0]),pin(n,pair[1]));
+        const winding=CATALOG[n.type].winding?motorWinding(n,net):null;
+        const v=winding?winding.voltage:poles(n)===3?net.three(["U","V","W"].map(x=>pin(n,x))):net.voltage(pin(n,pair[0]),pin(n,pair[1]));
         const neutralOK=!n.params.neutralRequired||(net.unique(pin(n,"N"))?.phase==="N"&&net.unique(pin(n,"N"))?.source===net.unique(pin(n,"U"))?.source);
         s.voltage=v;s.on=neutralOK&&v>=number(n,"voltage",230)*.3&&!fault(r,n.id,"coil-open");
-        s.elapsed=s.on?(base.on?base.elapsed+dt:0):0;
-      }else if(k==="contactor"||k==="no"||k==="changeover")s.on=!!net.driven[n.tag]||(k==="contactor"&&fault(r,n.id,"welded"));
+        s.elapsed=s.on?(base.on?base.elapsed+dt:0):0;if(winding)s.stage=winding.stage;
+      }else if(k==="contactor"||k==="no"||k==="changeover")s.on=(k==="contactor"&&CATALOG[n.type].contact==="NC"?!net.driven[n.tag]:!!net.driven[n.tag])||(k==="contactor"&&fault(r,n.id,"welded"));
       else if(k==="nc")s.on=!net.driven[n.tag];
-      else if(["breaker","fuse","rcd","switch","source"].includes(k))s.on=switched(r,n)&&!s.tripped;
+      else if(["breaker","fuse","rcd","switch","source","isolator"].includes(k))s.on=switched(r,n)&&!s.tripped;
       else if(["stop","estop"].includes(k))s.on=!r.manual[n.id]&&!fault(r,n.id,"pressed");
       else if(k==="start")s.on=!!r.manual[n.id];
       else if(k==="pressure"){next[n.id]=pressureState(n,r,base);continue;}
+      else if(k==="converter"){s.voltage=poles(n)===3?net.three(["L1","L2","L3"].map(t=>pin(n,t))):net.voltage(pin(n,"L"),pin(n,"N"));s.on=s.voltage>=number(n,"voltage",230)*.85&&s.voltage<=number(n,"voltage",230)*1.15;}
       else if(k==="transformer"){s.voltage=net.voltage(pin(n,"P1"),pin(n,"P2"));s.on=s.voltage>=number(n,"voltage",400)*.85&&s.voltage<=number(n,"voltage",400)*1.15;}
       else if(k==="meter"){s.voltage=net.voltage(pin(n,"V1"),pin(n,"V2"));s.on=s.voltage>0;s.current=previous.wireCurrent[String(n.params.wire)]??0;}
       else if(k==="selector")s.on=(r.manual[n.id]??n.params.position)!=="OFF";
@@ -90,11 +101,14 @@ export function stepCircuit(project:Project,previous:Runtime,dt=0,tripPass=0):Ru
   for(const n of project.nodes){
     const k=kind(n),s=states[n.id];if(!s.on&&!(coilKinds.includes(k)&&s.input))continue;
     if(loadKinds.includes(k)){
-      const ps=poles(n)===3?["U","V","W"]:k==="motor"||k==="heater"?(poles(n)===0?["+","-"]:["L","N"]):["X1","X2"];
+      const winding=CATALOG[n.type].winding?motorWinding(n,net):null;
+      const ps=winding?winding.pins:poles(n)===3?["U","V","W"]:k==="motor"||k==="heater"?(poles(n)===0?["+","-"]:["L","N"]):["X1","X2"];
       const paths=ps.flatMap(t=>net.path(pin(n,t))),cableOverload=paths.some(e=>e.startsWith("w:")&&fault(r,e.slice(2),"overload"));
       const {amps,watts,pf,starting,estimated}=loadCurrent(n,s,r,cableOverload);
-      s.current=amps;s.stage=starting?"starting":"running";s.peak=Math.max(previous.devices[n.id]?.peak??0,amps);r.watts+=watts;r.kva+=watts/Math.max(.01,pf)/1000;
-      if(poles(n)===3)ps.forEach(t=>consume(pin(n,t),amps,pf));else consumePair(pin(n,ps[0]),pin(n,ps[1]),amps,pf);
+      s.current=amps;if(!winding)s.stage=starting?"starting":"running";s.peak=Math.max(previous.devices[n.id]?.peak??0,amps);r.watts+=watts;r.kva+=watts/Math.max(.01,pf)/1000;
+      if(winding?.stage==="delta")for(const lead of ["U","V","W"])consumePair(pin(n,lead+"1"),pin(n,lead+"2"),amps/Math.sqrt(3),pf);
+      else if(winding?.stage==="star")ps.forEach((t,i)=>{const port=pin(n,t),v=phasor(net.unique(port)!);consume(port,amps,pf);consume(pin(n,["U2","V2","W2"][i]),amps,pf,Math.atan2(v.im,v.re),-1);});
+      else if(poles(n)===3)ps.forEach(t=>consume(pin(n,t),amps,pf));else consumePair(pin(n,ps[0]),pin(n,ps[1]),amps,pf);
       const protectionIds=[...new Set(paths.filter(e=>e.startsWith("n:")).map(e=>e.split(":")[1]).filter(id=>["breaker","fuse","overload","contactor"].includes(kind(project.nodes.find(x=>x.id===id)!))))];
       r.branchProtection[n.id]=protectionIds;
       if(estimated)r.warnings.push(n.tag+": arus estimasi HP/PK daya poros; nameplate diprioritaskan bila diisi.");
@@ -106,10 +120,10 @@ export function stepCircuit(project:Project,previous:Runtime,dt=0,tripPass=0):Ru
     }else if(coilKinds.includes(k)&&s.input){const va=Math.max(0,number(n,"va",3)),amps=va/Math.max(1,s.voltage);consumePair(pin(n,"A1"),pin(n,"A2"),amps);s.current=amps;r.watts+=va;r.kva+=va/1000;}
     else if(k==="controller"){const cp=controllerPins(n);s.current=3/Math.max(1,s.voltage);consumePair(pin(n,cp.line),pin(n,cp.neutral),s.current);r.watts+=3;r.kva+=.003;}
   }
-  for(const n of project.nodes.filter(n=>kind(n)==="transformer"&&states[n.id].on)){
-    const secondary=sourceComplex.get(n.id+":R"),amps=secondary?Math.hypot(secondary.re,secondary.im)*number(n,"secondary",230)/Math.max(1,states[n.id].voltage):0;
-    consumePair(pin(n,"P1"),pin(n,"P2"),amps);states[n.id].current=amps;
-    if(amps*states[n.id].voltage>number(n,"va",100))r.warnings.push(n.tag+": beban sekunder melebihi rating VA trafo.");
+  for(const n of project.nodes.filter(n=>["transformer","converter"].includes(kind(n))&&states[n.id].on)){
+    const converter=kind(n)==="converter",secondary=sourceComplex.get(n.id+(converter?":+":":R")),amps=secondary?Math.hypot(secondary.re,secondary.im)*number(n,"secondary",230)/Math.max(1,states[n.id].voltage):0;
+    if(converter&&poles(n)===3)["L1","L2","L3"].forEach(t=>consume(pin(n,t),amps/Math.sqrt(3)));else consumePair(pin(n,converter?"L":"P1"),pin(n,converter?"N":"P2"),amps);states[n.id].current=converter&&poles(n)===3?amps/Math.sqrt(3):amps;
+    if(amps*states[n.id].voltage>number(n,"va",100))r.warnings.push(n.tag+": beban output melebihi rating VA yang diisi.");
   }
   const shorts=shortCurrents(project,r,net);r.faults.push(...shorts.errors);r.warnings.push(...shorts.events);
   for(const text of shorts.events)if(!previous.warnings.includes(text))logEvent(r,text,"Fault");
@@ -126,6 +140,8 @@ export function stepCircuit(project:Project,previous:Runtime,dt=0,tripPass=0):Ru
     const k=kind(n),s=states[n.id];
     if(["overload","breaker","fuse"].includes(k)&&number(n,"rating")<=0)r.warnings.push(n.tag+": rating belum diisi; trip arus lebih belum dihitung.");
     if(["overload","breaker","fuse","rcd"].includes(k))newTrip=protectionStep(n,old[n.id],s,r,dt)||newTrip;
+    if(CATALOG[n.type].winding&&["speed-conflict","wiring-open"].includes(s.stage))r.warnings.push(n.tag+": "+(s.stage==="speed-conflict"?"kedua kecepatan mendapat suplai sekaligus; motor dihentikan.":"sambungan kumparan belum lengkap atau tidak sesuai mode."));
+    if(k==="controller"&&number(n,"rating")>0&&s.current>number(n,"rating"))r.warnings.push(n.tag+": arus kontak relay melebihi rating yang diisi.");
     if(k==="controller"&&s.stage==="sensor-fault")r.warnings.push(n.tag+": sensor terputus, tersambung salah, atau mendapat tegangan daya.");
     if(coilKinds.includes(k)&&s.voltage>0&&!s.input)r.warnings.push(n.tag+": coil tidak menarik; periksa "+s.voltage.toFixed(0)+" V, frekuensi, dan fault winding.");
     if(s.on!==old[n.id].on||s.tripped!==old[n.id].tripped)logEvent(r,n.tag+" "+(s.tripped?"TRIP":s.on?"ON":"OFF"),["breaker","overload","fuse","pfr"].includes(k)?"Protection":k==="controller"?"Controller":loadKinds.includes(k)?"Power":"Control",n.id);
@@ -156,7 +172,7 @@ export function interact(project:Project,r:Runtime,id:string,pressed?:boolean):R
   else if(k==="overload")next.devices[id]={...stateOf(r,n),tripped:true};
   else if(k==="estop")next.manual[id]=!r.manual[id];
   else if(k==="pressure"&&n.params.pressureType)next.requests[id]=true;
-  else if(["switch","source","breaker","fuse","rcd","pressure"].includes(k))next.manual[id]=!switched(r,n);
+  else if(["switch","source","breaker","fuse","rcd","pressure","isolator"].includes(k))next.manual[id]=!switched(r,n);
   else if(k==="selector"){const positions=selectorPositions(n),value=String(r.manual[id]??n.params.position);next.manual[id]=positions[(positions.indexOf(value)+1)%positions.length];}
   else if(k==="pfr")next.manual[id+":fault"]=!r.manual[id+":fault"];
   else if(k==="controller")next.requests[id]=true;

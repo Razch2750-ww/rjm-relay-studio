@@ -1,4 +1,4 @@
-import { controllerPins, kind, number, pin, poles, ports, selectorPositions } from "../circuit.ts";
+import { CATALOG, contactPairs, sourceTerminals, controllerPins, kind, number, pin, poles, ports, selectorPositions } from "../circuit.ts";
 import type { Project } from "../circuit.ts";
 import { coilKinds, freshState, switched, fault } from "./state.ts";
 import type { Runtime, DeviceState } from "./state.ts";
@@ -15,12 +15,12 @@ export function makeNetwork(p:Project,r:Runtime,states:Record<string,DeviceState
   for(const n of p.nodes) if(kind(n)==="pfr") driven[n.tag] ||= states[n.id]?.on ?? false;
   for(const n of p.nodes) {
     ports(n).forEach(t=>root(pin(n,t.name)));
-    const k=kind(n),s=states[n.id]??freshState(),on=switched(r,n);
+    const k=kind(n),d=CATALOG[n.type],s=states[n.id]??freshState(),on=switched(r,n);
     const link=(a:string,b:string)=>join(pin(n,a),pin(n,b),"n:"+n.id+":"+a);
     const powerPoles=()=>{for(let i=0;i<poles(n);i++)link(String(i*2+1),String(i*2+2));};
     if(k==="source" && on) {
       const missing=r.manual[n.id+":phase"];
-      const names=poles(n)===3?["L1","L2","L3","N","PE"]:poles(n)===0?["+","-"]:["L","N","PE"];
+      const names=sourceTerminals(n);
       for(const name of names) {
         const phase:Record<string,string>={L1:"R",L2:"S",L3:"T",L:"R",N:"N",PE:"PE","+":"+","-":"-"};
         if(missing===phase[name]||fault(r,n.id,"phase-loss")&&phase[name]==="R"||fault(r,n.id,"neutral-lost")&&phase[name]==="N")continue;
@@ -30,10 +30,12 @@ export function makeNetwork(p:Project,r:Runtime,states:Record<string,DeviceState
       }
     }
     if(["breaker","fuse","rcd"].includes(k) && on && !s.tripped)powerPoles();
-    if(k==="contactor" && (driven[n.tag]||fault(r,n.id,"welded")))powerPoles();
+    if(k==="contactor" && ((d.contact==="NC"?!driven[n.tag]:driven[n.tag])||fault(r,n.id,"welded")))powerPoles();
+    if(k==="isolator"&&on)powerPoles();
+    if(d.contact&&["switch","start","auxiliary","timedContact"].includes(k)){const active=k==="switch"?on:k==="start"?!!r.manual[n.id]:k==="timedContact"?s.on:!!driven[n.tag];for(const [a,b]of contactPairs(n,active))link(a,b);}
     if(k==="overload")powerPoles();
-    if(k==="switch" && on)link("1","2");
-    if(k==="start" && !!r.manual[n.id])link("1","2");
+    if(k==="switch" && !d.contact && on)link("1","2");
+    if(k==="start" && !d.contact && !!r.manual[n.id])link("1","2");
     if(["stop","estop"].includes(k) && !r.manual[n.id]&&!fault(r,n.id,"pressed"))link("1","2");
     if(k==="no" && driven[n.tag])link(ports(n)[0].name,ports(n)[1].name);
     if(k==="nc" && !driven[n.tag])link(ports(n)[0].name,ports(n)[1].name);
@@ -48,6 +50,7 @@ export function makeNetwork(p:Project,r:Runtime,states:Record<string,DeviceState
     }
     if(k==="pressure")link("C",(n.params.pressureType?s.on:on&&!fault(r,n.id,"pressure"))?"OK":"FAULT");
     if(k==="transformer"&&s.on){for(const [name,phase] of [["S1","R"],["S2","N"]]){const port=pin(n,name);sources.set(port,{source:n.id,phase,voltage:number(n,"secondary",230),three:false,port});}}
+    if(k==="converter"&&s.on){for(const name of ["+","-"]){const port=pin(n,name);sources.set(port,{source:n.id,phase:name,voltage:number(n,"secondary",24),three:false,port});}}
     if(k==="pfr")link("Tc",s.on?"Ta":"Tb");
     if(k==="controller"){
       const cp=controllerPins(n);
@@ -57,6 +60,18 @@ export function makeNetwork(p:Project,r:Runtime,states:Record<string,DeviceState
     }
   }
   for(const w of p.wires)if(!fault(r,w.id,"open"))join(w.from,w.to,"w:"+w.id);
+  // Resolve ideal DC diodes from externally supplied nets, then propagate through
+  // series diodes. AC half-wave transients are deliberately outside this model.
+  const diodes=p.nodes.filter(n=>kind(n)==="diode"),connected=new Set<string>();
+  for(let pass=0;pass<diodes.length;pass++){
+    let changed=false;
+    for(const n of diodes){if(connected.has(n.id))continue;
+      const at=(name:string)=>[...sources].filter(([port])=>root(port)===root(pin(n,name))).map(([,v])=>v);
+      const a=at("A"),b=at("K"),known=[...a,...b];
+      if(known.length&&known.every(v=>["+","-"].includes(v.phase))&&!a.some(v=>v.phase==="-")&&!b.some(v=>v.phase==="+")&&(a.some(v=>v.phase==="+")||b.some(v=>v.phase==="-"))){join(pin(n,"A"),pin(n,"K"),"n:"+n.id+":A");connected.add(n.id);changed=true;}
+    }
+    if(!changed)break;
+  }
   const potentials=new Map<string,Potential[]>();
   for(const [port,value]of sources){const rt=root(port);potentials.set(rt,[...(potentials.get(rt)??[]),value]);}
   const potential=(port:string)=>potentials.get(root(port))??[];

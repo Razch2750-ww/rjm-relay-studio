@@ -1,4 +1,4 @@
-import { controllerPins,defaultCable,kind,number,pin,poles,ports } from "./circuit.ts";
+import { CATALOG,controllerPins,defaultCable,kind,number,pin,poles,ports } from "./circuit.ts";
 import type { Node,Project,Wire } from "./circuit.ts";
 import { conductorLinks } from "./wire-colors.ts";
 import { cableCapacity,resistance } from "./engine/cable.ts";
@@ -6,7 +6,7 @@ import { nominalCurrent } from "./engine/load.ts";
 import { protectionRating } from "./engine/protection.ts";
 
 const SIZES=[1.5,2.5,4,6,10,16,25,35,50];
-const COILS=["coil","ton","toff","impulse","cyclic","interval","schedule"];
+const COILS=["coil","ton","toff","impulse","cyclic","interval","schedule","tonoff"];
 const LOADS=["motor","heater","lamp","buzzer","valve"];
 const amp=(a:number)=>a.toLocaleString("id-ID",{maximumFractionDigits:a<1?3:2})+" A";
 export function componentAmperage(n:Node):string|undefined{
@@ -17,7 +17,7 @@ export function componentAmperage(n:Node):string|undefined{
   if(LOADS.includes(k)){const current=nominalCurrent(n);return current.current>0?(current.estimated?"Est. ":"Nominal ")+amp(current.current*(k==="motor"?Math.max(1,number(n,"fanCount",1)):1)):"Arus: belum diisi";}
   if(COILS.includes(k))return "Coil "+amp(number(n,"va",3)/Math.max(1,number(n,"voltage",230)));
   if(k==="controller")return "Model "+amp(3/Math.max(1,number(n,"voltage",230)));
-  if(k==="transformer")return "Sekunder "+amp(number(n,"va",100)/Math.max(1,number(n,"secondary",230)));
+  if(["transformer","converter"].includes(k))return "Sekunder "+amp(number(n,"va",100)/Math.max(1,number(n,"secondary",230)));
   return "Rating: — A";
 }
 export const cableSizingMode=(w:Wire)=>w.cable?.sizing??(w.cable?"manual":"auto");
@@ -26,15 +26,16 @@ export function cableAnnotation(w:Wire){
   return c?`${w.label? w.label+" · ":""}${c.section.toLocaleString("id-ID")} mm² · ${mode}`:`${w.label? w.label+" · ":""}mm² belum diisi`;
 }
 export type CableRecommendation={current:number;protection:number;section:number|null;capacity:number|null;dropPercent:number;estimated:boolean;messages:string[];loads:string[]};
-type Demand={node:Node;current:number;estimated:boolean;terminals:string[];unknown?:string};
+type Demand={node:Node;current:number;estimated:boolean;terminals:string[];unknown?:string;winding?:boolean};
 function demands(project:Project):Demand[]{
   return project.nodes.flatMap<Demand>(n=>{
     const k=kind(n),voltage=Math.max(1,number(n,"voltage",230));
-    if(LOADS.includes(k)){const rated=nominalCurrent(n);return [{node:n,current:rated.current*(k==="motor"?Math.max(1,number(n,"fanCount",1)):1),estimated:rated.estimated,terminals:ports(n).filter(p=>p.name!=="PE").map(p=>pin(n,p.name)),unknown:rated.current>0?undefined:n.tag+": arus / daya beban belum lengkap"}];}
+    if(LOADS.includes(k)){const rated=nominalCurrent(n);return [{node:n,current:Math.max(rated.current,number(n,"lowCurrent"),number(n,"highCurrent"))*(k==="motor"?Math.max(1,number(n,"fanCount",1)):1),estimated:rated.estimated,winding:!!CATALOG[n.type].winding,terminals:ports(n).filter(p=>p.name!=="PE").map(p=>pin(n,p.name)),unknown:Math.max(rated.current,number(n,"lowCurrent"),number(n,"highCurrent"))>0?undefined:n.tag+": arus / daya beban belum lengkap"}];}
     if(COILS.includes(k))return [{node:n,current:number(n,"va",3)/voltage,estimated:false,terminals:[pin(n,"A1"),pin(n,"A2")]}];
     if(k==="controller"){const cp=controllerPins(n);return [{node:n,current:3/voltage,estimated:true,terminals:[pin(n,cp.line),pin(n,cp.neutral)]}];}
     // Size the primary for full transformer VA; the secondary is traced independently.
     if(k==="transformer")return [{node:n,current:number(n,"va",100)/voltage,estimated:false,terminals:[pin(n,"P1"),pin(n,"P2")]}];
+    if(k==="converter")return [{node:n,current:number(n,"va",100)/(voltage*(poles(n)===3?Math.sqrt(3):1)),estimated:false,terminals:(poles(n)===3?["L1","L2","L3"]:["L","N"]).map(t=>pin(n,t))}];
     if(k==="pfr")return [{node:n,current:0,estimated:false,terminals:["L1","L2","L3"].map(p=>pin(n,p)),unknown:n.tag+": konsumsi PFR perlu datasheet; pilih ukuran manual"}];
     return [];
   });
@@ -51,6 +52,7 @@ export function sizeProjectCables(project:Project):{project:Project;recommendati
   const sources=new Map<string,{node:Node;phase:string}>();
   for(const n of project.nodes){
     if(kind(n)==="source")for(const p of ports(n))sources.set(pin(n,p.name),{node:n,phase:p.name});
+    if(kind(n)==="converter")for(const phase of ["+","-"])sources.set(pin(n,phase),{node:n,phase});
     if(kind(n)==="transformer")for(const phase of ["S1","S2"])sources.set(pin(n,phase),{node:n,phase});
   }
   const seen=new Map<string,number>(),low=new Map<string,number>(),bridges=new Set<number>();let time=0;
@@ -83,10 +85,11 @@ export function sizeProjectCables(project:Project):{project:Project;recommendati
   const blockers=new Set<string>(),loadPaths:{d:Demand;paths:string[][]}[]=[];
   const message=(id:string,text:string,blocking=false)=>{const r=rec.get(id)!;if(!r.messages.includes(text))r.messages.push(text);if(blocking)blockers.add(id);};
   for(const d of demands(project)){
-    const paths:string[][]=[],touched=new Set<string>(),supplyIds=new Set<string>();let disconnected=false,returnProtection=0;
+    const paths:string[][]=[],touched=new Set<string>(),supplyIds=new Set<string>();let disconnected=false,returnProtection=0,connectedTerminals=0;const floatingTerminals:string[]=[];
     for(const terminal of d.terminals){
       let at=block.get(terminal);const path:number[]=[];
-      if(at===undefined||!sourceFor.has(at)){disconnected=true;paths.push([]);continue;}
+      if(at===undefined||!sourceFor.has(at)){if(d.winding)floatingTerminals.push(terminal);else disconnected=true;paths.push([]);continue;}
+      connectedTerminals++;
       supplyIds.add(sources.get(sourceFor.get(at)!)!.node.id);
       const conflict=conflicting.has(at);
       while(true){path.push(...internal.get(at)!);const p=parent.get(at);if(!p)break;path.push(p.edge);at=p.to;}
@@ -102,6 +105,19 @@ export function sizeProjectCables(project:Project):{project:Project;recommendati
         if(d.unknown)message(id,d.unknown,true);
         if(conflict)message(id,"Lebih dari satu terminal sumber terhubung. Perbaiki wiring sebelum hitung otomatis.",true);
         if(path.some(j=>!bridges.has(j)))message(id,"Jalur paralel: arus dihitung konservatif tanpa pembagian beban.");
+      }
+    }
+    if(d.winding){
+      disconnected=connectedTerminals<3;
+      // A star jumper has no source potential. Size its connected conductors for
+      // the full nameplate line current, conservatively; never report 0 A demand.
+      if(!disconnected){const visited=new Set<string>(),queue=[...floatingTerminals];
+        for(let i=0;i<queue.length;i++){const terminal=queue[i];if(visited.has(terminal))continue;visited.add(terminal);
+          for(const e of adj.get(terminal)??[]){queue.push(e.to);const id=edges[e.edge].wireId;if(!id||touched.has(id))continue;touched.add(id);
+            const r=rec.get(id)!;r.current+=d.current;r.estimated||=d.estimated;r.loads.push(d.node.tag);r.protection=Math.max(r.protection,returnProtection);
+            message(id,"Kabel kumparan / jumper: ukuran konservatif memakai arus nameplate maksimum.");if(d.unknown)message(id,d.unknown,true);
+          }
+        }
       }
     }
     // A neutral/return is protected by the phase device even though the neutral pole

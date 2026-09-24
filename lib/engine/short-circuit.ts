@@ -1,9 +1,10 @@
-import { kind,number,pin,poles } from "../circuit.ts";
+import { CATALOG,kind,number,pin,poles } from "../circuit.ts";
 import type { Project } from "../circuit.ts";
 import { makeNetwork,phasor } from "./network.ts";
 import { fault } from "./state.ts";
 import type { Runtime } from "./state.ts";
 import { resistance } from "./cable.ts";
+import { motorWinding } from "./motor-windings.ts";
 export function shortCurrents(p:Project,r:Runtime,net:ReturnType<typeof makeNetwork>){
  const edgeCurrent=new Map<string,number>(),errors:string[]=[],events:string[]=[];
  const apply=(sourceId:string,volts:number,path:string[])=>{
@@ -26,7 +27,7 @@ export function shortCurrents(p:Project,r:Runtime,net:ReturnType<typeof makeNetw
   }
  }
  for(const n of p.nodes)if(fault(r,n.id,"short")){
-  const terminals=poles(n)===3?["U","V"]:kind(n)==="lamp"?["X1","X2"]:["L","N"],a=pin(n,terminals[0]),b=pin(n,terminals[1]),v=net.voltage(a,b),src=net.unique(a);
+  const terminals=CATALOG[n.type].winding?motorWinding(n,net).pins:poles(n)===3?["U","V"]:kind(n)==="lamp"?["X1","X2"]:poles(n)===0?["+","-"]:["L","N"],a=pin(n,terminals[0]),b=pin(n,terminals[1]),v=net.voltage(a,b),src=net.unique(a);
   if(v>0&&src)apply(src.source,v,[...net.path(a),...net.path(b)]);
  }
  for(const w of p.wires)if(fault(r,w.id,"short")){

@@ -1,4 +1,4 @@
-import { controllerPins, kind, pin, poles, ports } from "./circuit.ts";
+import { CATALOG, contactPairs, controllerPins, kind, pin, poles, ports } from "./circuit.ts";
 import type { Project } from "./circuit.ts";
 
 export const WIRE_COLORS:Record<string,string>={R:"#e53935",S:"#ffdc00",T:"#ffffff",N:"#1976ed",PE:"#18a34a","+":"#e53935","-":"#1976ed",auto:"#596775",signal:"#796391"};
@@ -17,6 +17,7 @@ export function wirePhases(project:Project):Map<string,string>{
   const seed=(map:Map<string,Set<string>>,terminal:string,phase:string|undefined)=>{if(!phase)return;const id=root(terminal);if(!map.has(id))map.set(id,new Set());map.get(id)!.add(phase);};
   for(const n of project.nodes){
     if(kind(n)==="source")for(const p of ports(n))seed(sources,pin(n,p.name),phaseName(p.name));
+    if(kind(n)==="converter"){seed(sources,pin(n,"+"),"+");seed(sources,pin(n,"-"),"-");}
     if(kind(n)==="transformer"){seed(sources,pin(n,"S1"),"R");seed(sources,pin(n,"S2"),"N");}
     if(kind(n)==="bus")seed(hints,pin(n,"A"),phaseName(String(n.params.net??"").trim().toUpperCase()));
   }
@@ -39,8 +40,10 @@ export function conductorLinks(project:Project):ConductorLink[]{
   for(const n of project.nodes){
     const k=kind(n),valid=new Set(ports(n).map(p=>p.name));
     const link=(a:string,b:string)=>{if(valid.has(a)&&valid.has(b))edges.push({a:pin(n,a),b:pin(n,b),nodeId:n.id});};
-    if(["breaker","fuse","rcd","contactor","overload"].includes(k))for(let i=0;i<poles(n);i++)link(String(i*2+1),String(i*2+2));
-    if(["switch","start","stop","estop","limit","terminal"].includes(k))link("1","2");
+    if(["breaker","fuse","rcd","contactor","overload","isolator"].includes(k))for(let i=0;i<poles(n);i++)link(String(i*2+1),String(i*2+2));
+    if(CATALOG[n.type].contact&&["switch","start","auxiliary","timedContact"].includes(k)){for(const [a,b]of [...contactPairs(n,false),...contactPairs(n,true)])link(a,b);}
+    else if(["switch","start","stop","estop","limit","terminal"].includes(k))link("1","2");
+    if(k==="diode")link("A","K");
     if(k==="no"||k==="nc")link(ports(n)[0].name,ports(n)[1].name);
     if(k==="junction")for(const p of ports(n).slice(1))link(ports(n)[0].name,p.name);
     if(k==="bus"&&String(n.params.net??"").trim())edges.push({a:pin(n,"A"),b:"@"+String(n.params.net).trim(),nodeId:n.id});

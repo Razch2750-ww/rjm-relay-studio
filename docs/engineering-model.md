@@ -29,7 +29,7 @@ Arus nameplate yang positif selalu diprioritaskan. Jika arus belum tersedia, mod
 
 Konversi: HP=745,7 W; PK=735,5 W. Faktor fase = √3 untuk tiga fase, 1 untuk satu fase/DC. Kapasitas pendinginan bukan daya poros; pilihan `cooling` menolak estimasi ampere tersebut.
 
-Start memakai LRA, atau arus nominal × faktor start, selama durasi yang ditentukan. Model DOL memakai nilai penuh; star-delta memakai sepertiga arus start dan soft-start membatasi hingga tiga kali arus nominal. Ini pendekatan arus, bukan simulasi starter enam terminal atau ramp motor fisik. Locked rotor mempertahankan kondisi start. Arus start mengikuti rasio tegangan; running memakai pendekatan daya konstan dengan batas tegangan minimum numerik.
+Start memakai LRA, atau arus nominal × faktor start, selama durasi yang ditentukan. Model DOL memakai nilai penuh; star-delta memakai sepertiga arus start dan soft-start membatasi hingga tiga kali arus nominal. Pada motor 3 terminal ini hanya pendekatan arus; gunakan Motor 3 fase · star–delta untuk sambungan enam terminal. Ramp motor fisik tidak dihitung. Locked rotor mempertahankan kondisi start. Arus start mengikuti rasio tegangan; running memakai pendekatan daya konstan dengan batas tegangan minimum numerik.
 
 `fanCount` menggandakan beban fan identik. Untuk nameplate/kerusakan fan yang berbeda, buat komponen terpisah. kW mencakup beban dan konsumsi kontrol; kVA dan PF dihitung dari hasil arus kompleks.
 

@@ -1,5 +1,6 @@
 import { newId } from "./id.ts";
 import { z } from "zod";
+import { extendCatalog } from "./catalog-extensions.ts";
 
 export type Params = Record<string, string | number | boolean>;
 // One drafting grid for component origins, terminal centres and cable bends.
@@ -25,9 +26,9 @@ export type CalculationInput = {
   ambient: number; grouping: number; method: "A2" | "B2" | "C"; maxDrop: number; upstreamDrop: number;
   breaker: number; startFactor: number; startPowerFactor: number; faultKA: number; breakingKA: number;
 };
-export type Definition = { name: string; category: string; kind: string; poles?: number; width?: number; defaults: Params; description: string };
-export const CATEGORIES = ["Sumber", "Proteksi", "Kontaktor", "Tombol & sakelar", "Kontak bantu", "Coil & timer", "Beban", "Refrigerasi", "Lainnya"];
-export const CATEGORY_COLORS = ["#9dd77b", "#ef827b", "#70d1d2", "#c8a4ee", "#9abce6", "#e6c46f", "#e5a187", "#73b6ee", "#c9cbd5"];
+export type Definition = { name: string; category: string; kind: string; poles?: number; width?: number; defaults: Params; description: string; symbol?:string; contact?:"NO"|"NC"|"NO+NC"|"changeover"; timing?:"on"|"off"; terminals?:string[]; tripMode?:"thermal"|"magnetic"; residual?:boolean; winding?:"star-delta"|"two-speed"|"dahlander"; junctionPorts?:string[] };
+export const CATEGORIES = ["Sumber", "Proteksi", "Kontaktor", "Tombol & sakelar", "Kontak bantu", "Coil & timer", "Motor", "Beban", "Refrigerasi", "Lainnya"];
+export const CATEGORY_COLORS = ["#9dd77b", "#ef827b", "#70d1d2", "#c8a4ee", "#9abce6", "#e6c46f", "#79c9b2", "#e5a187", "#73b6ee", "#c9cbd5"];
 
 export const CATALOG: Record<string, Definition> = {
   source3: { name: "Sumber 3 fase + N", category: "Sumber", kind: "source", poles: 3, width: 180, defaults: { voltage: 400, on: true }, description: "Tegangan antar-fase; netral dan PE terpisah. Klik saat simulasi untuk ON/OFF." },
@@ -104,7 +105,7 @@ CATALOG.tap={name:"Pick point · cabang kabel",category:"Lainnya",kind:"junction
 for(const d of Object.values(CATALOG)){
   if(!["text","junction","bus"].includes(d.kind))Object.assign(d.defaults,{brand:"Custom",model:""});
   if(d.kind==="source")Object.assign(d.defaults,{frequency:d.poles===0?0:50,faultKA:0});
-  if(["coil","ton","toff","impulse","cyclic","interval","schedule"].includes(d.kind))Object.assign(d.defaults,{frequency:50});
+  if(["coil","ton","toff","tonoff","impulse","cyclic","interval","schedule"].includes(d.kind))Object.assign(d.defaults,{frequency:50});
   if(d.kind==="motor")Object.assign(d.defaults,{inputMode:"nameplate",hp:0,hpUnit:"HP",hpBasis:"shaft",efficiency:.85,lra:0,fanCount:1,startingMethod:"DOL"});
   if(d.kind==="contactor")Object.assign(d.defaults,{rating:25,brand:"Custom",model:""});
   if(d.kind==="overload")Object.assign(d.defaults,{minCurrent:0,maxCurrent:100,resetMode:"manual",coolingSeconds:30});
@@ -112,9 +113,10 @@ for(const d of Object.values(CATALOG)){
   if(d.kind==="controller")Object.assign(d.defaults,{highAlarm:12,lowAlarm:-10});
   if(d.kind==="breaker"||d.kind==="fuse")Object.assign(d.defaults,{breakingKA:d.defaults.breakingKA??6,voltage:d.defaults.voltage??415});
 }
+extendCatalog(CATALOG);
 export const projectSheets=(p:Project)=>[{id:"power" as Sheet,name:"Power"},{id:"control" as Sheet,name:"Control"},...(p.sheets??[])];
 export function nextTag(p:Project,type:string){
- const k=CATALOG[type].kind, prefix=({breaker:"QF",fuse:"FU",overload:"OL",contactor:"KM",coil:"KM",no:"KM",nc:"KM",lamp:"HL",source:"G",controller:"TC",motor:"M",probe:"BT",pressure:"SP",terminal:"TB",heater:"EH",pfr:"KF",ton:"KT",toff:"KT",interval:"KT",schedule:"KT",cyclic:"KT"} as Record<string,string>)[k]??"S";
+ const k=CATALOG[type].kind, prefix=({breaker:"QF",rcd:"QF",isolator:"QS",converter:"PS",diode:"VD",spd:"FV",buzzer:"HA",auxiliary:"KM",timedContact:"KT",tonoff:"KT",fuse:"FU",overload:"OL",contactor:"KM",coil:"KM",no:"KM",nc:"KM",lamp:"HL",source:"G",controller:"TC",motor:"M",probe:"BT",pressure:"SP",terminal:"TB",heater:"EH",pfr:"KF",ton:"KT",toff:"KT",interval:"KT",schedule:"KT",cyclic:"KT"} as Record<string,string>)[k]??"S";
  let i=1;while(p.nodes.some(n=>n.tag===prefix+i))i++;return prefix+i;
 }
 export const controllerPins = (n: Node) => n.type === "xr70"
@@ -122,12 +124,21 @@ export const controllerPins = (n: Node) => n.type === "xr70"
   : { common:"1",comp:"4",fan:"5",defCommon:"1",defrost:"2",defNC:"3",line:"6",neutral:"7",evap:"8",sensorCommon:"9",room:"10" };
 export const selectorPositions = (n: Node) => ["selector12","selector102"].includes(n.type) ? ["2","OFF","1"] : ["AUTO","OFF","MAN"];
 export type Port = { name: string; x: number; y: number };
+export const sourceTerminals=(n:Node)=>CATALOG[n.type].terminals??(poles(n)===3?["L1","L2","L3","N","PE"]:poles(n)===0?["+","-"]:["L","N","PE"]);
+export function contactPairs(n:Node,active:boolean):[string,string][]{
+  const mode=CATALOG[n.type].contact;
+  if(mode==="changeover")return [["11",active?"14":"12"]];
+  if(mode==="NO+NC")return [active?["13","14"]:["21","22"]];
+  return (mode==="NC"?!active:active)?[["1","2"]]:[];
+}
 export const nodeSize = (n: Node) => {
   const d=CATALOG[n.type];
   if(n.type==="tap")return {width:0,height:0};
   if(d.kind==="junction")return {width:40,height:40};
   if(d.kind==="bus")return {width:80,height:40};
-  const count=d.kind==="controller"?(n.type==="xr70"?12:10):d.kind==="source"?(d.poles===3?5:d.poles===0?2:3):["motor","heater"].includes(d.kind)&&n.params.neutralRequired?4:d.poles??1;
+  if(n.type==="etc974")return {width:480,height:240};
+  if(d.winding)return {width:160,height:160};
+  const count=d.kind==="controller"?(n.type==="xr70"?12:10):d.kind==="source"?sourceTerminals(n).length:["motor","heater"].includes(d.kind)&&n.params.neutralRequired?4:d.poles??1;
   return {width:d.kind==="text"?240:Math.max(120,count*PIN_PITCH),height:d.kind==="controller"?160:120};
 };
 export const number = (n: Node, key: string, fallback = 0) => typeof n.params[key] === "number" && Number.isFinite(n.params[key]) ? n.params[key] as number : fallback;
@@ -142,8 +153,15 @@ export function ports(n: Node): Port[] {
   if(n.type==="tap")return [{name:"A",x:0,y:0}];
   if(n.type==="overloadNC")return pair("95","96");
   if(n.type==="overloadNO")return pair("97","98");
+  if(d.winding)return [...row(d.winding==="star-delta"?["U1","V1","W1"]:["1U","1V","1W"],0),...row(d.winding==="star-delta"?["U2","V2","W2"]:["2U","2V","2W"],h),{name:"PE",x:w,y:h/2}];
+  if(d.contact==="NO+NC")return [...row(["13","21"],0),...row(["14","22"],h)];
+  if(d.contact==="changeover")return [...row(["11"],0),...row(["12","14"],h)];
+  if(d.kind==="isolator")return [...row(Array.from({length:d.poles!},(_,i)=>String(i*2+1)),0),...row(Array.from({length:d.poles!},(_,i)=>String(i*2+2)),h)];
+  if(d.kind==="diode")return pair("A","K");
+  if(d.kind==="converter")return [...row(d.poles===3?["L1","L2","L3"]:["L","N"],0),...row(["+","-"],h)];
+  if(d.kind==="spd")return [...row(["L1","L2","L3"],0),{name:"PE",x:w/2,y:h}];
   if (d.kind === "source") {
-    const terminals = row(d.poles === 3 ? ["L1", "L2", "L3", "N", "PE"] : d.poles === 0 ? ["+", "-"] : ["L", "N", "PE"], h);
+    const terminals = row(sourceTerminals(n), h);
     // Keep AC phases in screen reading order at every quarter turn. Move each
     // named terminal itself so labels, hit targets and connected wires agree.
     return d.poles !== 0 && n.rotation >= 180 ? terminals.map(p => ({ ...p, x: w - p.x })) : terminals;
@@ -153,9 +171,9 @@ export function ports(n: Node): Port[] {
   if (d.kind === "transformer") return [...row(["P1","P2"],0),...row(["S1","S2"],h)];
   if (d.kind === "meter") return pair("V1","V2");
   if (d.kind === "bus") return [{ name: "A", x: w / 2, y: h }];
-  if (d.kind === "junction") return [{ name: "T", x: w/2,y:0 }, { name:"B",x:w/2,y:h },{name:"L",x:0,y:h/2},{name:"R",x:w,y:h/2}];
+  if (d.kind === "junction") return [{ name: "T", x: w/2,y:0 }, { name:"B",x:w/2,y:h },{name:"L",x:0,y:h/2},{name:"R",x:w,y:h/2}].filter(p=>!d.junctionPorts||d.junctionPorts.includes(p.name));
   if (["motor","heater"].includes(d.kind)) return [...row(d.poles === 3 ? (n.params.neutralRequired?["U","V","W","N"]:["U","V","W"]) : d.poles === 0 ? ["+","-"] : ["L","N"],0), { name:"PE",x:w/2,y:h }];
-  if (["coil","ton","toff","impulse","cyclic","interval","schedule"].includes(d.kind)) return pair("A1","A2");
+  if (["coil","ton","toff","tonoff","impulse","cyclic","interval","schedule"].includes(d.kind)) return pair("A1","A2");
   if (["lamp","buzzer","valve"].includes(d.kind)) return pair("X1","X2");
   if (d.kind === "changeover") return [...row(["11"],0),...row(["12","14"],h)];
   if (d.kind === "selector") return n.params.mapping?[...row(["13","23"],0),...row(["14","24"],h)]:[...row(["C"],0),...row(n.type==="selector12"?["1","2"]:["MAN","AUTO"],h)];

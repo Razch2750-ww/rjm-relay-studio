@@ -1,4 +1,4 @@
-import { kind,number } from "../circuit.ts";
+import { CATALOG,kind,number } from "../circuit.ts";
 import type { Node } from "../circuit.ts";
 import type { DeviceState,Runtime } from "./state.ts";
 import { fault,setting } from "./state.ts";
@@ -12,8 +12,8 @@ export function protectionStep(n:Node,old:DeviceState,s:DeviceState,r:Runtime,dt
  else if(s.tripped&&k==="overload"&&n.params.resetMode==="auto"&&s.heat<=.2)s.tripped=false;
  if(!s.tripped&&rated>0){
    const magnetic=number(n,"magnetic",n.params.curve==="B"?5:n.params.curve==="D"?20:10);
-   if(s.heat>=1||(k!=="overload"&&ratio>=magnetic&&dt>0))s.tripped=true;
+   if((CATALOG[n.type].tripMode!=="magnetic"&&s.heat>=1)||(CATALOG[n.type].tripMode!=="thermal"&&k!=="overload"&&ratio>=magnetic&&dt>0))s.tripped=true;
  }
- if(k==="rcd"&&setting(r,n,"leakageMA")>=Math.max(1,number(n,"thresholdMA",30)))s.tripped=true;
+ if((k==="rcd"||CATALOG[n.type].residual)&&setting(r,n,"leakageMA")>=Math.max(1,number(n,"thresholdMA",30)))s.tripped=true;
  return s.tripped!==old.tripped;
 }

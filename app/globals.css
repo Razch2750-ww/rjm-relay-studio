@@ -145,7 +145,7 @@ input[type=color] { padding: 4px; }
 .palette-scroll h3 { display: flex; align-items: center; gap: 7px; color: #c2cbd7; font-size: 12px; font-weight: 500; margin: 6px 0 9px; }
 .palette-scroll h3 i { width: 3px; height: 11px; }
 .component-grid { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 5px; }
-.palette-component { border: 1px solid #344050; border-radius: 3px; height: 85px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; padding: 5px 3px; background: #131a23; color: #c5cfdb; }
+.palette-component { border: 1px solid #344050; border-radius: 3px; min-height: 92px; height: auto; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; padding: 5px 3px; background: #131a23; color: #c5cfdb; }
 .palette-component svg { width: 45px; height: 44px; flex: 0 0 auto; }
 .palette-component span { font-size: 10px; line-height: 1.15; text-align: center; }
 .palette-component:hover,.palette-component.chosen { border-color: #9ec5f6; background: #22334a; color: white; }
@@ -490,3 +490,7 @@ progress { display:inline-block; width:60px; height:7px; accent-color:#3f8b69; m
 .cable-sizing-summary .sizing-note { color: #e7c88a; }
 @media (prefers-reduced-motion: reduce) { .wire-current { animation: none; } }
 @media print { .wire-current { animation: none; } .wire-handle { display: none; } }
+
+.controller-pin-map { display:grid; grid-template-columns:44px 1fr; gap:5px 8px; font-size:12px; margin:6px 0 14px; }
+.controller-pin-map dt { font-family:var(--font-mono); color:#cbd5df; }
+.controller-pin-map dd { margin:0; color:#a7b7c9; }

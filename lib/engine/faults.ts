@@ -10,7 +10,7 @@ export const FAULTS=[
  {id:"failed",name:"PFR / controller / probe rusak",kinds:["pfr","controller","probe"]},
  {id:"overload",name:"Beban berlebih 300% · kabel: beban hilir",kinds:["motor","heater","wire"]},
  {id:"locked",name:"Locked rotor / fan macet",kinds:["motor"]},
- {id:"coil-open",name:"Coil / winding putus",kinds:["coil","ton","toff","interval","cyclic","impulse","schedule","motor"]},
+ {id:"coil-open",name:"Coil / winding putus",kinds:["coil","ton","toff","interval","cyclic","impulse","schedule","tonoff","motor"]},
  {id:"welded",name:"Kontak utama melekat",kinds:["contactor"]},
  {id:"trip",name:"Trip proteksi",kinds:["overload","breaker","fuse","rcd"]},
  {id:"pressure",name:"Tekanan abnormal HP / LP",kinds:["pressure"]},

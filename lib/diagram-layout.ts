@@ -102,7 +102,7 @@ export function layoutDiagram(project:Project,sheet:Sheet){
     const first=n.rotation/90,sides=[0,1,2,3].map(s=>(s+first)%4).sort((a,b)=>counts[a]-counts[b]);
     let picked:Label|undefined;
     const alternatives:Label[]=[];
-    for(const wrap of [140,100]){
+    for(const wrap of n.type==="etc974"?[320,140]:[140,100]){
       const lines=n.label===n.tag?[]:wrapLabel(n.label,wrap);
       const w=Math.max(textWidth(n.tag+(canTrip?" · TRIP":""),18,true),textWidth(amperage??"",14),...lines.map(s=>textWidth(s,14)))+12,h=28+(lines.length+(amperage?1:0))*18;
       const choices=candidates(body,w,h,sides).map(b=>({...b,lines,amperage}));alternatives.push(...choices);

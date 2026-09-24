@@ -1,4 +1,5 @@
 "use client";
+import { extendedSymbol } from "./component-symbols";
 import { newId } from "../lib/id";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { CATALOG, kind, nodeSize, pin, poles, portPosition, ports,defaultCable,number,SNAP,PIN_RADIUS,snap } from "../lib/circuit";
@@ -15,16 +16,18 @@ import { WIRE_COLORS as PHASE,wirePhases } from "../lib/wire-colors";
 
 export { WIRE_COLORS as PHASE } from "../lib/wire-colors";
 export function Symbol({node:n,runtime,mini=false,rotation=0}:{node:Node;runtime?:Runtime;mini?:boolean;rotation?:number}){
-  const {width:w,height:h}=nodeSize(n),k=kind(n),s=runtime?stateOf(runtime,n):undefined,on=s?!!s.on:["nc","stop","estop"].includes(k)||!!n.params.on;
+  const {width:w,height:h}=nodeSize(n),k=kind(n),s=runtime?stateOf(runtime,n):undefined,on=s?!!s.on&&(CATALOG[n.type].symbol!=="flashing"||runtime!.now%Math.max(.2,number(n,"blinkPeriod",1))<Math.max(.2,number(n,"blinkPeriod",1))/2):["nc","stop","estop"].includes(k)||(k==="contactor"&&CATALOG[n.type].contact==="NC")||!!n.params.on;
   const ink=s?.tripped?"#c12f34":runtime&&on?"#70dfa2":mini?"#c8d1dd":"#cbd5df";
   const line=(x1:number,y1:number,x2:number,y2:number,key?:string)=><line key={key} x1={x1} y1={y1} x2={x2} y2={y2}/>;
   const upright=(x:number,y:number)=>`rotate(${-rotation} ${x} ${y})`;
+  const special=extendedSymbol(n,runtime,mini,rotation,ink);
+  if(special)return <g stroke={ink} fill="none" strokeWidth={2.1} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{special}</g>;
   const multi=["breaker","fuse","rcd","contactor","overload"].includes(k);
   return <g stroke={ink} fill="none" strokeWidth={2.1} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
     {multi&&Array.from({length:poles(n)},(_,i)=>{
       const x=ports(n)[i].x,closed=k==="overload"||on;
       return <g key={i}>{line(x,0,x,28)}{line(x,72,x,h)}
-        {k==="fuse"?<rect x={x-7} y={28} width={14} height={44}/>:k==="overload"?<path d={"M"+x+" 28v16h-7v15h14v13h-7"}/>:<>{line(x,72,closed?x:x+19,28)}<circle cx={x} cy={28} r={3}/>{k==="breaker"||k==="rcd"?<path d={"M"+(x-6)+" 52h12l-6-6"}/>:null}</>}
+        {k==="fuse"?<rect x={x-7} y={28} width={14} height={44}/>:k==="overload"?<path d={"M"+x+" 28v16h-7v15h14v13h-7"}/>:<>{line(x,72,closed?x:x+19,28)}<circle cx={x} cy={28} r={3}/>{CATALOG[n.type].contact==="NC"&&line(x-6,28,x+6,28)}{k==="breaker"||k==="rcd"?<path d={"M"+(x-6)+" 52h12l-6-6"}/>:null}</>}
       </g>;
     })}
     {multi&&poles(n)>1&&<line x1={ports(n)[0].x} y1={55} x2={ports(n)[poles(n)-1].x} y2={55} strokeDasharray="5 5" opacity={.6}/>}
@@ -37,9 +40,9 @@ export function Symbol({node:n,runtime,mini=false,rotation=0}:{node:Node;runtime
       {k==="valve"&&<path d={"M"+(w/2-25)+" 28l50 44V28l-50 44z"}/>}
       {(k==="motor"||k==="heater")&&<>{line(w/2,h-18,w/2,h)}<path d={"M"+(w/2-10)+" "+(h-18)+"h20m-16-5h12"}/></>}
     </>}
-    {["coil","ton","toff","impulse","cyclic","schedule","interval"].includes(k)&&<>
+    {["coil","ton","toff","tonoff","impulse","cyclic","schedule","interval"].includes(k)&&<>
       {line(w/2,0,w/2,32)}{line(w/2,68,w/2,h)}<rect x={w/2-27} y={32} width={54} height={36} fill={runtime&&on?"#153326":mini?"#141c25":"#101419"}/>
-      {k==="coil"?<path d={"M"+(w/2-27)+" 68l54-36"}/>:<text x={w/2} y={50} dominantBaseline="central" transform={upright(w/2,50)} textAnchor="middle" fill={ink} stroke="none" fontSize={rotation%180&&k==="cyclic"?9:16}>{k==="ton"?"t↑":k==="toff"?"t↓":k==="cyclic"?"NC/NO":k==="schedule"?"24h":k==="interval"?"t‖":"↕"}</text>}
+      {k==="coil"?(CATALOG[n.type].symbol==="relay"?null:<path d={"M"+(w/2-27)+" 68l54-36"}/>):<text x={w/2} y={50} dominantBaseline="central" transform={upright(w/2,50)} textAnchor="middle" fill={ink} stroke="none" fontSize={rotation%180&&k==="cyclic"?9:16}>{k==="tonoff"?"t↑↓":k==="ton"?"t↑":k==="toff"?"t↓":k==="cyclic"?"NC/NO":k==="schedule"?"24h":k==="interval"?"t‖":"↕"}</text>}
     </>}
     {["switch","start","stop","estop","no","nc","pressure","selector","limit","changeover"].includes(k)&&<>
       {ports(n).map(p=>line(p.x,p.y,p.x,p.y===0?28:72,p.name))}
@@ -47,7 +50,7 @@ export function Symbol({node:n,runtime,mini=false,rotation=0}:{node:Node;runtime
       {["start","stop","estop"].includes(k)&&<><path d={"M"+(w/2-34)+" 45h25m-25-8v16"} strokeDasharray="4 3"/>{k==="estop"&&<circle cx={w/2-38} cy={45} r={12} fill={runtime?.manual[n.id]?"#cf4e4e":"#813c3d"}/>}</>}
       {k==="nc"||k==="stop"?line(w/2-8,28,w/2+8,28):null}
     </>}
-    {k==="source"&&<><circle cx={w/2} cy={42} r={30}/><text x={w/2} y={42} dominantBaseline="central" transform={upright(w/2,42)} textAnchor="middle" fontSize="19" fill={ink} stroke="none">{poles(n)===3?"3~":poles(n)===0?"DC":"~"}</text>{ports(n).map(p=>line(p.x,80,p.x,h,p.name))}</>}
+    {k==="source"&&<><circle cx={w/2} cy={42} r={30}/><text x={w/2} y={42} dominantBaseline="central" transform={upright(w/2,42)} textAnchor="middle" fontSize="19" fill={ink} stroke="none">{CATALOG[n.type].symbol==="generator"?"G3~":poles(n)===3?"3~":poles(n)===0?"DC":"~"}</text>{ports(n).map(p=>line(p.x,80,p.x,h,p.name))}</>}
     {k==="pfr"&&<><rect x={15} y={22} width={w-30} height={h-44} rx={2}/><text x={w/2} y={h/2} dominantBaseline="central" transform={upright(w/2,h/2)} textAnchor="middle" fontSize="21" fill={ink} stroke="none">PFR</text>{ports(n).map(p=>line(p.x,p.y,p.x,p.y===0?22:h-22,p.name))}</>}
     {k==="controller"&&<><rect x={4} y={6} width={w-8} height={100} rx={3} fill={mini?"#101920":"#101419"}/>
       <g transform={upright(w/2,56)}><text x={w/2} y={43} textAnchor="middle" fontSize={mini?28:rotation%180?11:25} fill={ink} stroke="none" fontFamily="monospace">{s?.on?"TC  "+String(s.stage==="sensor-fault"?"ERR":s.temperature??"—")+" °C":"TC  — —"}</text>
@@ -72,7 +75,7 @@ export function Schematic({project,sheet,runtime,running,editable,selected,onSel
   const [size,setSize]=useState({w:900,h:650}),[view,setView]=useState({x:0,y:0,z:.65}),[pending,setPending]=useState<string|null>(null),[bends,setBends]=useState<{x:number;y:number}[]>([]),[cursor,setCursor]=useState({x:0,y:0});
   const space=useRef(false);
   const lastWireClick=useRef<{id:string;time:number;x:number;y:number}|null>(null);
-  const secondWireClick=(id:string,x:number,y:number)=>{const last=lastWireClick.current,time=Date.now(),twice=!!last&&last.id===id&&time-last.time<500&&Math.hypot(last.x-x,last.y-y)<6;lastWireClick.current=twice?null:{id,time,x,y};return twice;};
+  const secondWireClick=(id:string,x:number,y:number,time:number)=>{const last=lastWireClick.current,twice=!!last&&last.id===id&&time-last.time<500&&Math.hypot(last.x-x,last.y-y)<6;lastWireClick.current=twice?null:{id,time,x,y};return twice;};
   const [guides,setGuides]=useState<{guideX?:number;guideY?:number}>({});
   useEffect(()=>{const down=(e:KeyboardEvent)=>{if(e.code==="Space"&&!(e.target as Element)?.closest("input,textarea,select,button,[contenteditable=true]")&&!(running&&(e.target as Element)?.closest(".circuit-node"))){space.current=true;e.preventDefault();}},up=()=>{space.current=false;};window.addEventListener("keydown",down);window.addEventListener("keyup",up);window.addEventListener("blur",up);return()=>{window.removeEventListener("keydown",down);window.removeEventListener("keyup",up);window.removeEventListener("blur",up);};},[running]);
   const {nodes,routes,nodeLabels,wireLabels,bounds:box,routingConflicts}=useMemo(()=>layoutDiagram(project,sheet),[project,sheet]);
@@ -125,7 +128,7 @@ export function Schematic({project,sheet,runtime,running,editable,selected,onSel
       {!printing&&<rect x={view.x-2000} y={view.y-2000} width={20000} height={20000} fill="url(#dot-grid)" pointerEvents="none"/>}
       {routes.map(({wire:w,points},routeIndex)=>{
         const live=running&&Math.abs(runtime.wireCurrent[w.id]??0)>.00001,phase=conductorPhases.get(w.id)??"auto",label=wireLabels.get(w.id),path=paths[routeIndex],color=PHASE[phase],width=live?3.2:2.2;
-        return <g key={w.id} data-wire={w.id} data-phase={phase} data-flowing={live?"true":"false"} onPointerDown={e=>{if(space.current||e.button===1)return;e.stopPropagation();if((pickMode||pending||secondWireClick(w.id,e.clientX,e.clientY))&&editable&&!running){tapWire(w.id,points,world(e.clientX,e.clientY));return;}onSelect(w.id);}}
+        return <g key={w.id} data-wire={w.id} data-phase={phase} data-flowing={live?"true":"false"} onPointerDown={e=>{if(space.current||e.button===1)return;e.stopPropagation();if((pickMode||pending||secondWireClick(w.id,e.clientX,e.clientY,e.timeStamp))&&editable&&!running){tapWire(w.id,points,world(e.clientX,e.clientY));return;}onSelect(w.id);}}
           onPointerMove={e=>{if(!editable||running||(!pickMode&&!pending))return;const picked=pickWirePoint(points,world(e.clientX,e.clientY));if(picked)setHoverPick({wireId:w.id,point:picked.point});}} onPointerLeave={()=>setHoverPick(null)}>
           <title>{`Kabel ${w.label||w.id} · ${phase==="auto"?"fase belum diketahui":phase} · ${cableSizingMode(w)==="auto"?"Ukuran otomatis":"Ukuran manual"}${debug?` · ${w.from} → ${w.to} · ${runtime.energized[w.from]??"floating"} · ${(runtime.wireCurrent[w.id]??0).toFixed(3)} A · ${w.cable?.section??"?"} mm² · ${(runtime.cables[w.id]?.temperature??30).toFixed(1)} °C`:""}`}</title>
           <path d={path} stroke="transparent" strokeWidth={16} fill="none" style={{cursor:pickMode||pending?"crosshair":"pointer"}}/>
@@ -182,7 +185,7 @@ export function Schematic({project,sheet,runtime,running,editable,selected,onSel
             const i=j+1,next=points[i+1],vertical=Math.abs(point.x-next.x)<.001,mid={x:(point.x+next.x)/2,y:(point.y+next.y)/2};
             if(Math.hypot(next.x-point.x,next.y-point.y)<12)return null;
             return <g key={i} className="wire-handle" role="button" tabIndex={0} aria-label={`Geser ruas ${i} kabel ${w.label||w.id}`} style={{cursor:vertical?"ew-resize":"ns-resize"}}
-              onPointerDown={e=>{e.stopPropagation();if(pickMode||pending||secondWireClick(w.id,e.clientX,e.clientY)){drag.current=null;tapWire(w.id,points,world(e.clientX,e.clientY));return;}onCheckpoint();drag.current={id:w.id,x:e.clientX,y:e.clientY,nx:mid.x,ny:mid.y,index:i,points};e.currentTarget.setPointerCapture(e.pointerId);}}
+              onPointerDown={e=>{e.stopPropagation();if(pickMode||pending||secondWireClick(w.id,e.clientX,e.clientY,e.timeStamp)){drag.current=null;tapWire(w.id,points,world(e.clientX,e.clientY));return;}onCheckpoint();drag.current={id:w.id,x:e.clientX,y:e.clientY,nx:mid.x,ny:mid.y,index:i,points};e.currentTarget.setPointerCapture(e.pointerId);}}
               onKeyDown={e=>{const offsets:Record<string,Point>={ArrowLeft:{x:-SNAP,y:0},ArrowRight:{x:SNAP,y:0},ArrowUp:{x:0,y:-SNAP},ArrowDown:{x:0,y:SNAP}};const offset=offsets[e.key];if(!offset)return;e.preventDefault();e.stopPropagation();onEdit(p=>{p.wires.find(wire=>wire.id===w.id)!.bends=moveWireSegment(points,i,{x:mid.x+offset.x,y:mid.y+offset.y}).slice(1,-1);});}}>
               <rect x={mid.x-12/view.z} y={mid.y-12/view.z} width={24/view.z} height={24/view.z} fill="transparent"/>
               <rect x={mid.x-4/view.z} y={mid.y-4/view.z} width={8/view.z} height={8/view.z} rx={1/view.z} fill="#101923" stroke="#95c9ff" strokeWidth={1.5/view.z}/><title>{vertical?"Geser kiri / kanan":"Geser atas / bawah"}</title>

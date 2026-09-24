@@ -8,11 +8,19 @@ type Vector={re:number;im:number};
 // on each conductive net. Finite wire resistances split parallel paths; ideal
 // contacts use a tiny numerical resistance. Motor dynamics remain lumped models.
 export function currentNetwork(p:Project,r:Runtime,net:ReturnType<typeof makeNetwork>,demand:Map<string,Vector>){
- const pins=[...net.adj.keys()].filter(id=>net.unique(id)),fixed=new Set(net.sources.keys()),unknown=pins.filter(id=>!fixed.has(id));
+ const floating=new Set<string>(),anchors=new Set<string>();
+ // Balanced winding return currents also flow through a floating star point.
+ // Ground one numerical node per such net; it is not an electrical PE bond.
+ for(const origin of demand.keys())if(!net.potential(origin).length&&!floating.has(origin)){
+   const group=[origin],seen=new Set(group);let re=0,im=0,magnitude=0;
+   for(let i=0;i<group.length;i++){const current=demand.get(group[i]);if(current){re+=current.re;im+=current.im;magnitude+=Math.hypot(current.re,current.im);}for(const e of net.adj.get(group[i])??[])if(!seen.has(e.to)){seen.add(e.to);group.push(e.to);}}
+   if(magnitude>0&&Math.hypot(re,im)<magnitude*1e-7){group.forEach(id=>floating.add(id));anchors.add(origin);}
+ }
+ const pins=[...net.adj.keys()].filter(id=>net.unique(id)||floating.has(id)),fixed=new Set([...net.sources.keys(),...anchors]),unknown=pins.filter(id=>!fixed.has(id));
  const index=new Map(unknown.map((id,i)=>[id,i])),count=unknown.length,diag=new Float64Array(count);
  const wires=new Map(p.wires.map(w=>["w:"+w.id,w]));
  const edges:{a:string;b:string;via:string;g:number}[]=[];
- for(const a of pins)for(const e of net.adj.get(a)??[])if(a<e.to&&net.unique(e.to)){
+ for(const a of pins)for(const e of net.adj.get(a)??[])if(a<e.to&&(net.unique(e.to)||floating.has(e.to))){
    const w=wires.get(e.via),ohms=w?resistance(w,r.cables[w.id]?.temperature,fault(r,w.id,"loose")):0;
    const g=1/Math.max(.000001,ohms);edges.push({a,b:e.to,via:e.via,g});
    const ai=index.get(a),bi=index.get(e.to);if(ai!==undefined)diag[ai]+=g;if(bi!==undefined)diag[bi]+=g;
@@ -38,7 +46,7 @@ export function currentNetwork(p:Project,r:Runtime,net:ReturnType<typeof makeNet
  }
  const physicalRoots=new Set(p.wires.filter(w=>resistance(w,r.cables[w.id]?.temperature,fault(r,w.id,"loose"))>0).map(w=>net.root(w.from)));
  const nodeVoltage:Runtime["nodeVoltage"]={};
- for(const id of pins){const source=net.unique(id)!,v=phasor(source),d=physicalRoots.has(net.root(id))?drops.get(id)!:{re:0,im:0};nodeVoltage[id]={re:v.re-d.re,im:v.im-d.im,source:source.source,net:net.root(id)};}
+ for(const id of pins){const source=net.unique(id);if(!source)continue;const v=phasor(source),d=physicalRoots.has(net.root(id))?drops.get(id)!:{re:0,im:0};nodeVoltage[id]={re:v.re-d.re,im:v.im-d.im,source:source.source,net:net.root(id)};}
  for(const [id,source]of net.sources)if(!nodeVoltage[id])nodeVoltage[id]={...phasor(source),source:source.source,net:net.root(id)};
  return {edgeCurrent,sourceCurrent,nodeVoltage};
 }
