@@ -168,6 +168,7 @@ input[type=color] { padding: 4px; }
 .canvas-caption { position: absolute; bottom: 10px; left: 12px; right: 12px; display: flex; justify-content: space-between; gap: 12px; pointer-events: none; color: #aabbd0; font-size: 11px; }
 .canvas-caption span { background: #14202d; padding: 5px 8px; border: 1px solid #36475d; border-radius: 3px; }
 .circuit-node { cursor: pointer; }
+.component-symbol text { pointer-events: none; }
 .terminal-hit { cursor: crosshair; }
 .canvas-hint { position: absolute; bottom: 14px; left: 14px; right: 14px; pointer-events: none; font-size: 12px; color: #a6b6c8; background: #151e2a; width: fit-content; padding: 7px 10px; border: 1px solid #3b4c60; border-radius: 4px; }
 .canvas-empty { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; pointer-events: none; color: #a5b5c8; padding: 25px; text-align: center; }

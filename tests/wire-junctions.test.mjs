@@ -41,6 +41,22 @@ test("picking a wire endpoint reuses its terminal, without a duplicate junction"
   assert.deepEqual(pickWirePoint(points,{x:33,y:202}).point,{x:40,y:200});
 });
 
+test("pick points follow snap everywhere on horizontal and vertical spans, including bends and reversed wires",()=>{
+  const points=[{x:100,y:100},{x:100,y:300},{x:400,y:300},{x:400,y:500}];
+  const cases=[[{x:103,y:137},{x:100,y:140}],[{x:98,y:277},{x:100,y:280}],[{x:100,y:300},{x:100,y:300}],[{x:167,y:302},{x:160,y:300}],[{x:361,y:296},{x:360,y:300}],[{x:402,y:439},{x:400,y:440}]];
+  for(const ps of [points,[...points].reverse()])for(const [cursor,expected] of cases){const picked=pickWirePoint(ps,cursor);assert.deepEqual(picked.point,expected);assert.equal(picked.point.x%SNAP,0);assert.equal(picked.point.y%SNAP,0);}
+  assert.deepEqual(pickWirePoint([{x:100.00000001,y:107},{x:100,y:193}],{x:100,y:195}).point,{x:100,y:180});
+  assert.equal(pickWirePoint([{x:100,y:101},{x:100,y:119}],{x:100,y:110}),null,"never create an off-grid tap on a span with no grid point");
+});
+
+test("a tap at an unrelated crossing splits only the chosen conductor",()=>{
+  const p=blankProject(),a=newNode("tap","power",100,100,"J1"),b=newNode("tap","power",100,500,"J2"),c=newNode("tap","power",0,300,"J3"),d=newNode("tap","power",400,300,"J4");p.nodes=[a,b,c,d];
+  p.wires=[wire("vertical",a,"A",b,"A"),wire("horizontal",c,"A",d,"A")];const untouched=structuredClone(p.wires[1]);
+  const target=insertWireTap(p,"vertical",[{x:100,y:100},{x:100,y:500}],{x:100,y:300});assert.ok(target);
+  assert.deepEqual(p.wires[1],untouched);assert.notEqual(wireNets(p).get("vertical"),wireNets(p).get("horizontal"));
+  assert.equal(p.nodes.at(-1).x,100);assert.equal(p.nodes.at(-1).y,300);
+});
+
 test("same physical origin can overlap, while equal phase colours across a breaker cannot",()=>{
   const p=blankProject(),g=newNode("source1","power",0,0,"G"),q=newNode("breaker1","power",0,300,"Q"),a=newNode("lamp","power",300,300,"H1"),b=newNode("lamp","power",500,300,"H2");
   p.nodes=[g,q,a,b];p.wires=[wire("one",g,"L",q,"1"),wire("two",g,"L",a,"X1"),wire("three",q,"2",b,"X1")];

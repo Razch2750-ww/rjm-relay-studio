@@ -7,9 +7,9 @@ import { wireNets } from "./wire-colors.ts";
 
 export type Point = {x:number;y:number};
 export type Rect = {x:number;y:number;w:number;h:number};
-export type Label = Rect & {lines:string[];amperage?:string;rotation?:90};
+export type Label = Rect & {lines:string[];amperage?:string;rotation?:90;anchor?:"start"|"middle"|"end"};
+export type WireLabel = Label & {fontSize:number;textLength:number};
 type Segment = {a:Point;b:Point};
-const GAP=18;
 
 export function nodeBounds(n:Node):Rect {
   const size=nodeSize(n),quarter=n.rotation%180!==0;
@@ -71,19 +71,64 @@ export function terminalLabel(n:Node,name:string){
   const w=textWidth(name,12,true);
   return {x,y,anchor,side:dx>0?1:dx<0?3:dy>0?2:0,box:{x:anchor==="end"?x-w:x,y:y-12,w,h:15}} as const;
 }
-function candidates(body:Rect,w:number,h:number,sides:number[]):Rect[] {
-  const result:Rect[]=[];
-  for(const gap of [8,20,40,60,80,100,120])for(const side of sides)for(const offset of [0,20,-20,40,-40,60,-60,80,-80,100,-100,120,-120]){
+function candidates(body:Rect,w:number,h:number,sides:number[]) {
+  const result:{box:Rect & {anchor:"start"|"middle"|"end"};distance:number}[]=[];
+  for(const gap of [3,8,16,24,40,60,80,100,120])for(const side of sides)for(const offset of [0,20,-20,40,-40,60,-60,80,-80,100,-100,120,-120,160,-160,200,-200]){
     const cx=body.x+body.w/2,cy=body.y+body.h/2;
-    result.push(side===0?{x:cx-w/2+offset,y:body.y-gap-h,w,h}:side===1?{x:body.x+body.w+gap,y:cy-h/2+offset,w,h}:side===2?{x:cx-w/2+offset,y:body.y+body.h+gap,w,h}:{x:body.x-gap-w,y:cy-h/2+offset,w,h});
+    const box=side===0?{x:cx-w/2+offset,y:body.y-gap-h,w,h}:side===1?{x:body.x+body.w+gap,y:cy-h/2+offset,w,h}:side===2?{x:cx-w/2+offset,y:body.y+body.h+gap,w,h}:{x:body.x-gap-w,y:cy-h/2+offset,w,h};
+    result.push({box:{...box,anchor:side===1?"start":side===3?"end":"middle"},distance:gap+Math.abs(offset)/2});
   }
-  return result;
+  return result.sort((a,b)=>a.distance-b.distance).map(c=>c.box);
+}
+/** One line, attached to an actual straight cable span. Reading direction is
+ * screen-based: left-to-right horizontally, top-to-bottom (clockwise) vertically. */
+function fitWireLabel(annotation:string,points:Point[],occupied:Rect[],segments:Segment[]):WireLabel|undefined {
+  const text=annotation.replace(/\s+/g," ").trim(),unitWidth=textWidth(text,1,true),gap=3;
+  const edges=points.slice(1).map((b,i)=>({a:points[i],b})).filter(e=>Math.hypot(e.b.x-e.a.x,e.b.y-e.a.y)>8)
+    .sort((a,b)=>Math.hypot(b.b.x-b.a.x,b.b.y-b.a.y)-Math.hypot(a.b.x-a.a.x,a.b.y-a.a.y));
+  for(const side of [1,-1]){
+    let best:WireLabel|undefined;
+    for(const {a,b} of edges){
+      const vertical=Math.abs(a.x-b.x)<.001,axis=vertical?"y":"x",start=Math.min(a[axis],b[axis])+4,end=Math.max(a[axis],b[axis])-4;
+      const upper=Math.min(14,(end-start)/Math.max(1,unitWidth));if(upper<.05||upper<=(best?.fontSize??0))continue;
+      const fit=(fontSize:number):WireLabel|undefined=>{
+        const thickness=fontSize*1.2,textLength=unitWidth*fontSize;
+        const across=vertical?a.x+(side===1?gap:-gap-thickness):a.y+(side===1?-gap-thickness:gap);
+        const stripe:Rect=vertical?{x:across,y:start,w:thickness,h:end-start}:{x:start,y:across,w:end-start,h:thickness};
+        const blocked:[number,number][]=[];
+        const block=(box:Rect)=>{if(overlaps(stripe,box))blocked.push([Math.max(start,box[axis]),Math.min(end,box[axis]+(vertical?box.h:box.w))]);};
+        occupied.forEach(block);
+        for(const segment of segments){
+          // Leave space around a crossing bridge; parallel conductors only need
+          // their stroke clearance so text can still fit inside a narrow lane.
+          const parallel=(Math.abs(segment.a.x-segment.b.x)<.001)===vertical;
+          const px=!vertical&&!parallel?8:2.5,py=vertical&&!parallel?8:2.5;
+          block({x:Math.min(segment.a.x,segment.b.x)-px,y:Math.min(segment.a.y,segment.b.y)-py,w:Math.abs(segment.a.x-segment.b.x)+px*2,h:Math.abs(segment.a.y-segment.b.y)+py*2});
+        }
+        blocked.sort((a,b)=>a[0]-b[0]);let cursor=start,span:[number,number]|undefined;
+        const consider=(from:number,to:number)=>{if(to-from>=textLength-1e-7&&(!span||to-from>span[1]-span[0]))span=[from,to];};
+        for(const [from,to] of blocked){consider(cursor,from);cursor=Math.max(cursor,to);}consider(cursor,end);
+        if(!span)return;
+        const along=(span[0]+span[1]-textLength)/2;
+        return {...(vertical?{x:across,y:along,w:thickness,h:textLength,rotation:90 as const}:{x:along,y:across,w:textLength,h:thickness}),lines:[text],fontSize,textLength};
+      };
+      let candidate=fit(upper);
+      if(!candidate){
+        let low=best?.fontSize??0,high=upper;
+        for(let i=0;i<12;i++){const mid=(low+high)/2;if(fit(mid))low=mid;else high=mid;}
+        if(low>=.05)candidate=fit(Math.floor(low*100)/100);
+      }
+      if(candidate&&candidate.fontSize>(best?.fontSize??0))best=candidate;
+      if(best?.fontSize===14)return best;
+    }
+    if(best)return best;
+  }
 }
 export function layoutDiagram(project:Project,sheet:Sheet){
   const sizing=sizeProjectCables(project).recommendations;
   const nodes=project.nodes.filter(n=>n.sheet===sheet),byId=new Map(nodes.map(n=>[n.id,n]));
   const bodies=nodes.filter(n=>n.type!=="tap").map(nodeBounds);
-  const occupied:Rect[]=bodies.map(b=>padded(b,6));
+  const occupied:Rect[]=bodies.map(b=>padded(b,2));
   for(const n of nodes)if(n.type==="tap")occupied.push({x:n.x-8,y:n.y-8,w:16,h:16});
   const stems:Segment[]=[];
   for(const n of nodes)for(const port of ports(n)){
@@ -92,7 +137,7 @@ export function layoutDiagram(project:Project,sheet:Sheet){
     const a=portPosition(n,port.name),directions=[{x:0,y:-1},{x:1,y:0},{x:0,y:1},{x:-1,y:0}],d=directions[t.side];
     stems.push({a,b:{x:a.x+d.x*SNAP,y:a.y+d.y*SNAP}});
   }
-  const nodeLabels=new Map<string,Label>(),wireLabels=new Map<string,Label>();
+  const nodeLabels=new Map<string,Label>(),wireLabels=new Map<string,WireLabel>();
   // Anchor descriptions beside their symbol first, then route cables around them.
   // Never move a component label into a remote annotation bank.
   for(const n of nodes){
@@ -104,45 +149,26 @@ export function layoutDiagram(project:Project,sheet:Sheet){
     const alternatives:Label[]=[];
     for(const wrap of n.type==="etc974"?[320,140]:[140,100]){
       const lines=n.label===n.tag?[]:wrapLabel(n.label,wrap);
-      const w=Math.max(textWidth(n.tag+(canTrip?" · TRIP":""),18,true),textWidth(amperage??"",14),...lines.map(s=>textWidth(s,14)))+12,h=28+(lines.length+(amperage?1:0))*18;
+      const w=Math.max(textWidth(n.tag+(canTrip?" · TRIP":""),18,true),textWidth(amperage??"",14),...lines.map(s=>textWidth(s,14)))+4,h=24+(lines.length+(amperage?1:0))*16;
       const choices=candidates(body,w,h,sides).map(b=>({...b,lines,amperage}));alternatives.push(...choices);
-      picked=choices.find(b=>!occupied.some(o=>overlaps(b,o))&&!stems.some(s=>crossesBox(s.a,s.b,padded(b,12))));if(picked)break;
+      picked=choices.find(b=>!occupied.some(o=>overlaps(b,o))&&!stems.some(s=>crossesBox(s.a,s.b,padded(b,3))));if(picked)break;
     }
     // A user can physically overlap devices; keep that conflict local and visible.
     picked??=alternatives.reduce((best,b)=>occupied.filter(o=>overlaps(b,o)).length<occupied.filter(o=>overlaps(best,o)).length?b:best);
-    nodeLabels.set(n.id,picked);occupied.push(padded(picked,6));
+    nodeLabels.set(n.id,picked);occupied.push(padded(picked,3));
   }
   const nets=wireNets(project),routes:{wire:Wire;points:Point[];net?:string}[]=[];
   const wires=project.wires.filter(w=>byId.has(w.from.split(":")[0])).sort((a,b)=>Number(!!b.bends.length)-Number(!!a.bends.length));
   for(const wire of wires){const net=nets.get(wire.id);routes.push({wire,net,points:wirePoints(wire,byId,routes,[...nodeLabels.values()],net)});}
   const routingConflicts=routes.filter((r,i)=>{const blocked=routingContext(routes.slice(0,i),r.points[0],r.points.at(-1)!,r.net);return r.points.slice(1).some((p,j)=>blocked(r.points[j],p));}).map(r=>r.wire.id);
   const segments:Segment[]=routes.flatMap(r=>r.points.slice(1).map((b,i)=>({a:r.points[i],b})));
-  const free=(box:Rect)=>!occupied.some(b=>overlaps(box,b))&&!segments.some(s=>crossesBox(s.a,s.b,padded(box,5)));
-  const outerX=Math.max(0,...bodies.map(b=>b.x+b.w),...segments.flatMap(s=>[s.a.x,s.b.x]))+GAP;
-  const outerHeight=Math.max(700,...bodies.map(b=>b.y+b.h),...segments.flatMap(s=>[s.a.y,s.b.y]));
-  let fallbackX=outerX,fallbackY=0;
-  const place=(choices:(Rect&{rotation?:90})[],lines:string[]):Label=>{
-    let box=choices.find(free);
-    if(!box){
-      box={...choices[0],x:fallbackX,y:fallbackY};
-      while(!free(box)){box={...box,y:box.y+box.h+GAP};if(box.y+box.h>outerHeight){fallbackX+=280;box={...box,x:fallbackX,y:0};}}
-      fallbackY=box.y+box.h+GAP;if(fallbackY>outerHeight){fallbackX+=280;fallbackY=0;}
-    }
-    occupied.push(padded(box,6));return {...box,lines};
-  };
   for(const {wire,points} of routes){
     if(points.length<2)continue;
     const annotation=`${wire.label?wire.label+" · ":""}${wire.cable?wire.cable.section.toLocaleString("id-ID")+" mm²":"mm² belum diisi"}${wire.cable?.sizing==="auto"&&sizing.get(wire.id)?.section===null?" · AUTO?":""}`;
-    const lines=wrapLabel(annotation,185),w=Math.max(...lines.map(s=>textWidth(s,14,true)))+12,h=lines.length*18+8;
-    const choices:(Rect&{rotation?:90})[]=[];
-    const edges=points.slice(1).map((b,i)=>({a:points[i],b})).sort((u,v)=>Math.hypot(v.b.x-v.a.x,v.b.y-v.a.y)-Math.hypot(u.b.x-u.a.x,u.b.y-u.a.y));
-    for(const {a,b} of edges)for(const fraction of [.5,.25,.75])for(const gap of [8,20,36]){
-      const x=a.x+(b.x-a.x)*fraction,y=a.y+(b.y-a.y)*fraction;
-      if(Math.abs(a.x-b.x)<.001&&Math.abs(a.y-b.y)>w+12)choices.push({x:x+gap,y:y-w/2,w:h,h:w,rotation:90},{x:x-gap-h,y:y-w/2,w:h,h:w,rotation:90});
-      choices.push({x:x-w/2,y:y-gap-h,w,h},{x:x+gap,y:y-h/2,w,h},{x:x-w/2,y:y+gap,w,h},{x:x-gap-w,y:y-h/2,w,h});
-    }
-    wireLabels.set(wire.id,place(choices,lines));
+    const label=fitWireLabel(annotation,points,occupied,segments);
+    if(label){wireLabels.set(wire.id,label);occupied.push(padded(label,2));}
   }
+
   const all=[...bodies,...nodeLabels.values(),...wireLabels.values(),...segments.flatMap(s=>[s.a,s.b]).map(p=>({...p,w:0,h:0}))];
   const x=Math.min(0,...all.map(b=>b.x))-35,y=Math.min(0,...all.map(b=>b.y))-35;
   const bounds={x,y,w:Math.max(x+240,...all.map(b=>b.x+b.w))-x+35,h:Math.max(y+180,...all.map(b=>b.y+b.h))-y+35};

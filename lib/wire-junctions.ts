@@ -1,4 +1,4 @@
-import { defaultCable, newNode, pin, snap } from "./circuit.ts";
+import { defaultCable, newNode, pin, SNAP, snap } from "./circuit.ts";
 import type { Project } from "./circuit.ts";
 import { newId } from "./id.ts";
 import { orthogonalPoints } from "./wire-routing.ts";
@@ -8,9 +8,14 @@ const distance=(a:Point,b:Point)=>Math.hypot(a.x-b.x,a.y-b.y);
 export function pickWirePoint(points:Point[],cursor:Point){
   let best:{point:Point;index:number;distance:number}|null=null;
   for(let i=0;i<points.length-1;i++){
-    const a=points[i],b=points[i+1],vertical=Math.abs(a.x-b.x)<.001;
-    const clamp=(v:number,lo:number,hi:number)=>Math.max(Math.min(lo,hi),Math.min(Math.max(lo,hi),snap(v)));
-    const point=vertical?{x:a.x,y:clamp(cursor.y,a.y,b.y)}:{x:clamp(cursor.x,a.x,b.x),y:a.y},d=distance(point,cursor);
+    const a=points[i],b=points[i+1],vertical=Math.abs(a.x-b.x)<.001,axis=vertical?"y":"x",other=vertical?"x":"y";
+    // Project onto every straight span, then choose a grid point inside that
+    // span. Clamping after snapping must never produce an off-grid endpoint.
+    if(Math.abs(a[other]-b[other])>.001||Math.abs(a[other]-snap(a[other]))>.001||distance(a,b)<.001)continue;
+    const lo=Math.ceil((Math.min(a[axis],b[axis])-.001)/SNAP)*SNAP,hi=Math.floor((Math.max(a[axis],b[axis])+.001)/SNAP)*SNAP;
+    if(lo>hi)continue;
+    const along=Math.max(lo,Math.min(hi,snap(cursor[axis])));
+    const point=vertical?{x:snap(a.x),y:along}:{x:along,y:snap(a.y)},d=distance(point,cursor);
     if(!best||d<best.distance)best={point,index:i,distance:d};
   }
   return best;

@@ -127,27 +127,29 @@ export function Schematic({project,sheet,runtime,running,editable,selected,onSel
       <rect x={view.x-2000} y={view.y-2000} width={20000} height={20000} fill="#000000" className="canvas-background"/>
       {!printing&&<rect x={view.x-2000} y={view.y-2000} width={20000} height={20000} fill="url(#dot-grid)" pointerEvents="none"/>}
       {routes.map(({wire:w,points},routeIndex)=>{
-        const live=running&&Math.abs(runtime.wireCurrent[w.id]??0)>.00001,phase=conductorPhases.get(w.id)??"auto",label=wireLabels.get(w.id),path=paths[routeIndex],color=PHASE[phase],width=live?3.2:2.2;
+        const live=running&&Math.abs(runtime.wireCurrent[w.id]??0)>.00001,phase=conductorPhases.get(w.id)??"auto",path=paths[routeIndex],color=PHASE[phase],width=live?3.2:2.2;
         return <g key={w.id} data-wire={w.id} data-phase={phase} data-flowing={live?"true":"false"} onPointerDown={e=>{if(space.current||e.button===1)return;e.stopPropagation();if((pickMode||pending||secondWireClick(w.id,e.clientX,e.clientY,e.timeStamp))&&editable&&!running){tapWire(w.id,points,world(e.clientX,e.clientY));return;}onSelect(w.id);}}
           onPointerMove={e=>{if(!editable||running||(!pickMode&&!pending))return;const picked=pickWirePoint(points,world(e.clientX,e.clientY));if(picked)setHoverPick({wireId:w.id,point:picked.point});}} onPointerLeave={()=>setHoverPick(null)}>
           <title>{`Kabel ${w.label||w.id} · ${phase==="auto"?"fase belum diketahui":phase} · ${cableSizingMode(w)==="auto"?"Ukuran otomatis":"Ukuran manual"}${debug?` · ${w.from} → ${w.to} · ${runtime.energized[w.from]??"floating"} · ${(runtime.wireCurrent[w.id]??0).toFixed(3)} A · ${w.cable?.section??"?"} mm² · ${(runtime.cables[w.id]?.temperature??30).toFixed(1)} °C`:""}`}</title>
-          <path d={path} stroke="transparent" strokeWidth={16} fill="none" style={{cursor:pickMode||pending?"crosshair":"pointer"}}/>
+          <path d={path} className="wire-hit" stroke="transparent" strokeWidth={16} fill="none" style={{cursor:pickMode||pending?"crosshair":"pointer"}}/>
           <path d={path} stroke="#000000" strokeWidth={width+6} fill="none" pointerEvents="none"/>
           {selected===w.id&&<path d={path} stroke="#78add4" strokeWidth={width+4} fill="none" pointerEvents="none"/>}
           {runtime.injected[w.id+":short"]&&<path d={path} stroke="#c33636" strokeWidth={width+4} strokeDasharray="9 6" fill="none" pointerEvents="none"/>}
           {["S","T"].includes(phase)&&<path d={path} stroke="#53606a" strokeWidth={width+1.4} fill="none" pointerEvents="none"/>}
           <path className="wire-conductor" d={path} stroke={color} strokeWidth={width} strokeOpacity={live?.45:1} fill="none" pointerEvents="none"/>
           {live&&<path className="wire-current" d={path} stroke={color} strokeWidth={width} strokeDasharray="10 16" fill="none" pointerEvents="none"/>}
-          {label&&<text pointerEvents="none" className="wire-annotation" transform={label.rotation?`translate(${label.x+label.w} ${label.y}) rotate(90)`:`translate(${label.x} ${label.y})`} x={6} y={17} fill="#c0cbd5" fontSize="14" fontFamily="monospace">{label.lines.map((line,i)=><tspan key={i} x={6} dy={i?18:0}>{line}</tspan>)}</text>}
+
 
         </g>;
       })}
+      {[...wireLabels].map(([id,label])=><text key={id} data-wire-label={id} pointerEvents="none" className="wire-annotation" transform={`translate(${label.x+label.w/2} ${label.y+label.h/2})${label.rotation?" rotate(90)":""}`} x={0} y={0} textAnchor="middle" dominantBaseline="central" fill="#c0cbd5" fontSize={label.fontSize} fontFamily="monospace" textLength={label.textLength} lengthAdjust="spacingAndGlyphs">{label.lines[0]}</text>)}
       {!printing&&guides.guideX!==undefined&&<line x1={guides.guideX} x2={guides.guideX} y1={view.y} y2={view.y+size.h/view.z} stroke="#488ab6" strokeWidth={1/view.z} strokeDasharray="5 5" pointerEvents="none"/>}
       {!printing&&guides.guideY!==undefined&&<line x1={view.x} x2={view.x+size.w/view.z} y1={guides.guideY} y2={guides.guideY} stroke="#488ab6" strokeWidth={1/view.z} strokeDasharray="5 5" pointerEvents="none"/>}
       {nodes.map(n=>{
         if(n.type==="tap")return null;
         const s=nodeSize(n),state=stateOf(runtime,n),isSelected=n.id===selected,label=nodeLabels.get(n.id)!,momentary=["start","stop"].includes(kind(n));
-        return <g key={n.id} transform={"translate("+n.x+" "+n.y+")"} role="button" tabIndex={0} aria-label={n.tag+" "+n.label+(running?" "+(state.tripped?"trip":state.on?"aktif":"tidak aktif"):"")} className="circuit-node"
+        const labelX=label.x+(label.anchor==="start"?2:label.anchor==="end"?label.w-2:label.w/2)-n.x;
+        return <g key={n.id} data-node={n.id} transform={"translate("+n.x+" "+n.y+")"} role="button" tabIndex={0} aria-label={n.tag+" "+n.label+(running?" "+(state.tripped?"trip":state.on?"aktif":"tidak aktif"):"")} className="circuit-node"
           onKeyDown={e=>{if(!e.repeat&&(e.key==="Enter"||e.key===" ")){e.preventDefault();if(running)onInteract(n.id,momentary?true:undefined);else onSelect(n.id);}}}
           onKeyUp={e=>{if(running&&momentary&&(e.key==="Enter"||e.key===" ")){e.preventDefault();onInteract(n.id,false);}}}
           onPointerDown={e=>{if(space.current||e.button===1)return;e.stopPropagation();onSelect(n.id);if(running){onInteract(n.id,momentary?true:undefined);if(momentary)e.currentTarget.setPointerCapture(e.pointerId);return;}if(editable){onCheckpoint();drag.current={id:n.id,x:e.clientX,y:e.clientY,nx:n.x,ny:n.y};e.currentTarget.setPointerCapture(e.pointerId);}}}
@@ -155,17 +157,17 @@ export function Schematic({project,sheet,runtime,running,editable,selected,onSel
           onPointerCancel={()=>{if(running&&momentary)onInteract(n.id,false);drag.current=null;}}>
           {debug&&<title>{`${n.tag} · ${state.voltage.toFixed(2)} V · ${state.current.toFixed(3)} A · ${state.tripped?"TRIP":state.on?"ON":"OFF"} · rating ${number(n,"rating")} A · thermal ${(state.heat*100).toFixed(0)}%`}</title>}
           <g transform={`rotate(${n.rotation} ${s.width/2} ${s.height/2})`}>
-            <rect x={-12} y={-12} width={s.width+24} height={s.height+24} rx={5} fill={isSelected?"#243454":"#111922"} fillOpacity={isSelected?0.3:0} stroke={isSelected?"#8194f2":"transparent"} strokeDasharray={isSelected?"6 4":undefined} className="node-hit"/>
-            {kind(n)!=="text"&&<Symbol node={n} runtime={running?runtime:undefined} rotation={n.rotation}/>}
+            {isSelected&&<rect x={-3} y={-3} width={s.width+6} height={s.height+6} rx={2} fill="none" stroke="#8194f2" strokeDasharray="6 4" pointerEvents="none" className="node-selection"/>}
+            {kind(n)!=="text"&&<g className="component-symbol"><Symbol node={n} runtime={running?runtime:undefined} rotation={n.rotation}/></g>}
             {ports(n).map(port=><g key={port.name}>
               <circle cx={port.x} cy={port.y} r={12} fill="transparent" className="terminal-hit" onPointerDown={e=>{if(space.current||e.button===1)return;e.stopPropagation();connect(pin(n,port.name));}} role="button" tabIndex={!running&&editable?0:-1} aria-label={n.tag+" terminal "+port.name} onKeyDown={e=>{if(e.key==="Enter"){e.stopPropagation();connect(pin(n,port.name));}}}/>
               <circle cx={port.x} cy={port.y} r={PIN_RADIUS} fill={pending===pin(n,port.name)?"#4f79a5":"#000000"} stroke={running&&runtime.energized[pin(n,port.name)]?"#258251":"#7b8e9e"} strokeWidth={1.5} pointerEvents="none"/>
             </g>)}
           </g>
-          {label&&<g className="node-annotation">
-            <text x={label.x+label.w/2-n.x} y={label.y+18-n.y} textAnchor="middle" fill={running&&state.tripped?"#ff7c82":"#eef4fa"} fontFamily="monospace" fontSize={18} fontWeight={600}>{n.tag}{running&&state.tripped?" · TRIP":""}</text>
-            <text x={label.x+label.w/2-n.x} y={label.y+38-n.y} textAnchor="middle" fill="#b3c1ce" fontSize={14}>{label.lines.map((line,i)=><tspan key={i} x={label.x+label.w/2-n.x} dy={i?18:0}>{line}</tspan>)}</text>
-            {label.amperage&&<text className="component-amperage" x={label.x+label.w/2-n.x} y={label.y+38+label.lines.length*18-n.y} textAnchor="middle" fill="#90c9ec" fontSize={14} fontFamily="monospace">{label.amperage}</text>}
+          {label&&<g className="node-annotation" pointerEvents={kind(n)==="text"?"visiblePainted":"none"}>
+            <text x={labelX} y={label.y+17-n.y} textAnchor={label.anchor??"middle"} fill={running&&state.tripped?"#ff7c82":"#eef4fa"} fontFamily="monospace" fontSize={18} fontWeight={600}>{n.tag}{running&&state.tripped?" · TRIP":""}</text>
+            <text x={labelX} y={label.y+33-n.y} textAnchor={label.anchor??"middle"} fill="#b3c1ce" fontSize={14}>{label.lines.map((line,i)=><tspan key={i} x={labelX} dy={i?16:0}>{line}</tspan>)}</text>
+            {label.amperage&&<text className="component-amperage" x={labelX} y={label.y+33+label.lines.length*16-n.y} textAnchor={label.anchor??"middle"} fill="#90c9ec" fontSize={14} fontFamily="monospace">{label.amperage}</text>}
           </g>}
           {ports(n).map(port=>{const label=terminalLabel(n,port.name);return <text key={port.name} className="terminal-label" x={label.x-n.x} y={label.y-n.y} textAnchor={label.anchor} fontSize="12" fontFamily="monospace" fill="#9cadbd" pointerEvents="none">{port.name}</text>;})}
         </g>;
@@ -195,6 +197,6 @@ export function Schematic({project,sheet,runtime,running,editable,selected,onSel
       {!nodes.length&&<text x={100} y={180} fill="#9caec2" fontSize="25">Pilih komponen, lalu klik area gambar.</text>}
     </svg>
     {!printing&&nodes.length>15&&<button className="diagram-minimap" aria-label="Navigasi minimap" onClick={e=>{const rect=e.currentTarget.getBoundingClientRect(),x=box.x+(e.clientX-rect.left)/rect.width*box.w,y=box.y+(e.clientY-rect.top)/rect.height*box.h;setView(v=>({...v,x:x-size.w/v.z/2,y:y-size.h/v.z/2}));}}><svg viewBox={`${box.x} ${box.y} ${box.w} ${box.h}`}><rect x={box.x} y={box.y} width={box.w} height={box.h} fill="#000000"/>{routes.map(r=><g key={r.wire.id}>{conductorPhases.get(r.wire.id)==="T"&&<path d={pathData(r.points)} stroke="#53606a" strokeWidth={11} fill="none"/>}<path d={pathData(r.points)} stroke={PHASE[conductorPhases.get(r.wire.id)??"auto"]} strokeWidth={7} fill="none"/></g>)}{nodes.map(n=><rect key={n.id} x={n.x} y={n.y} width={nodeSize(n).width} height={nodeSize(n).height} fill="#566c7d"/>)}<rect x={view.x} y={view.y} width={size.w/view.z} height={size.h/view.z} fill="#2f74a3" fillOpacity={.15} stroke="#2f74a3" strokeWidth={10}/></svg></button>}
-    {!printing&&<div className="canvas-caption"><span>{pickMode?"Klik ruas kabel untuk menaruh pick point · Esc batal":pending?"Klik terminal atau kabel tujuan · klik kosong untuk belokan · Esc batal":routingConflicts.length?`${routingConflicts.length} jalur terhalang. Geser komponen atau rapikan belokan.`:adding?"Klik untuk menempatkan "+CATALOG[adding].name:running?"Klik sakelar untuk menguji · tahan push button":editable?(selected&&project.wires.some(w=>w.id===selected)?"Klik dua kali kabel untuk pick point · tarik pegangan untuk belokan":"Tarik komponen · klik terminal untuk menyambung"):"Mode lihat & simulasi · edit dari PC/laptop"}</span><span>{Math.round(view.z*100)}%</span></div>}
+    {!printing&&<div className="canvas-caption"><span>{pickMode?"Klik di mana saja pada kabel · titik mengikuti snap 20 · Esc batal":pending?"Klik terminal atau kabel tujuan · klik kosong untuk belokan · Esc batal":routingConflicts.length?`${routingConflicts.length} jalur terhalang. Geser komponen atau rapikan belokan.`:adding?"Klik untuk menempatkan "+CATALOG[adding].name:running?"Klik sakelar untuk menguji · tahan push button":editable?(selected&&project.wires.some(w=>w.id===selected)?"Klik dua kali kabel untuk pick point · tarik pegangan untuk belokan":"Tarik komponen · klik terminal untuk menyambung"):"Mode lihat & simulasi · edit dari PC/laptop"}</span><span>{Math.round(view.z*100)}%</span></div>}
   </div>;
 }

@@ -1,12 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { blankProject, newNode, pin, ports, portPosition, PIN_PITCH } from "../lib/circuit.ts";
+import { blankProject, newNode, pin, ports, portPosition, PIN_PITCH, defaultCable } from "../lib/circuit.ts";
 import { wirePhases } from "../lib/wire-colors.ts";
 import { PROJECT_PRESETS } from "../lib/project-presets.ts";
 import { routingContext,moveWireSegment,addWireBend,orthogonalPoints } from "../lib/wire-routing.ts";
 import { crossesBox, layoutDiagram, nodeBounds, overlaps } from "../lib/diagram-layout.ts";
 
 function clearLabels(layout){
+  for(const {wire,points} of layout.routes)if(points.some((p,i)=>i&&Math.hypot(p.x-points[i-1].x,p.y-points[i-1].y)>8))assert.ok(layout.wireLabels.has(wire.id),`${wire.id} has a cable annotation`);
   const labels=[...layout.nodeLabels.values(),...layout.wireLabels.values()];
   const {bounds}=layout;
   for(const [i,label] of labels.entries()){
@@ -16,6 +17,25 @@ function clearLabels(layout){
     for(const node of layout.nodes)assert.equal(overlaps(label,nodeBounds(node)),false,"label stays off component bodies");
   }
 }
+
+test("cable labels hug the wire, remain one line, and face right even when endpoints are reversed",()=>{
+  for(const vertical of [true,false])for(const reverse of [true,false]){
+    const p=blankProject(),a=newNode("tap","power",100,100,"J1"),b=newNode("tap","power",vertical?100:400,vertical?400:100,"J2");p.nodes=[a,b];
+    p.wires=[{id:"w",from:pin(reverse?b:a,"A"),to:pin(reverse?a:b,"A"),label:"4",color:"R",bends:[],cable:{...defaultCable,sizing:"manual"}}];
+    const l=layoutDiagram(p,"power"),label=l.wireLabels.get("w");clearLabels(l);
+    assert.deepEqual(label.lines,["4 · 2,5 mm²"]);assert.equal(label.fontSize,14);
+    assert.equal(label.rotation,vertical?90:undefined);
+    assert.ok(Math.abs((vertical?label.x-100:100-label.y-label.h)-3)<1e-6,"label sits 3 units beside the line");
+  }
+});
+
+test("short spans shrink the complete cable label instead of wrapping, clipping or moving it away",()=>{
+  const p=blankProject(),a=newNode("tap","power",100,100,"J1"),b=newNode("tap","power",100,140,"J2");p.nodes=[a,b];
+  p.wires=[{id:"w",from:pin(a,"A"),to:pin(b,"A"),label:"CABANG KOMPRESOR",color:"R",bends:[],cable:{...defaultCable,sizing:"manual"}}];
+  const l=layoutDiagram(p,"power"),label=l.wireLabels.get("w");clearLabels(l);
+  assert.deepEqual(label.lines,["CABANG KOMPRESOR · 2,5 mm²"]);assert.ok(label.fontSize>0&&label.fontSize<14);
+  assert.equal(label.x,103);assert.equal(label.rotation,90);assert.ok(label.y>=108&&label.y+label.h<=132.001);
+});
 
 test("labels follow the source's free side at all four rotations without changing terminals",()=>{
   const expected=[[420,520],[440,380],[420,400],[560,380]];
