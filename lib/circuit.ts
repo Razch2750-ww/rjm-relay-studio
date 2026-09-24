@@ -142,7 +142,12 @@ export function ports(n: Node): Port[] {
   if(n.type==="tap")return [{name:"A",x:0,y:0}];
   if(n.type==="overloadNC")return pair("95","96");
   if(n.type==="overloadNO")return pair("97","98");
-  if (d.kind === "source") return row(d.poles === 3 ? ["L1", "L2", "L3", "N", "PE"] : d.poles === 0 ? ["+", "-"] : ["L", "N", "PE"], h);
+  if (d.kind === "source") {
+    const terminals = row(d.poles === 3 ? ["L1", "L2", "L3", "N", "PE"] : d.poles === 0 ? ["+", "-"] : ["L", "N", "PE"], h);
+    // Keep AC phases in screen reading order at every quarter turn. Move each
+    // named terminal itself so labels, hit targets and connected wires agree.
+    return d.poles !== 0 && n.rotation >= 180 ? terminals.map(p => ({ ...p, x: w - p.x })) : terminals;
+  }
   if (d.kind === "controller") return row(Array.from({length:n.type==="xr70"?12:10},(_,i)=>String(i+1)), h);
   if (d.kind === "pfr") return [...row(["L1","L2","L3"], 0), ...row(["Tc","Tb","Ta"], h)];
   if (d.kind === "transformer") return [...row(["P1","P2"],0),...row(["S1","S2"],h)];

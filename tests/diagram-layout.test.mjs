@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { blankProject, newNode, pin } from "../lib/circuit.ts";
+import { blankProject, newNode, pin, ports, portPosition, PIN_PITCH } from "../lib/circuit.ts";
+import { wirePhases } from "../lib/wire-colors.ts";
 import { PROJECT_PRESETS } from "../lib/project-presets.ts";
 import { routingContext,moveWireSegment,addWireBend,orthogonalPoints } from "../lib/wire-routing.ts";
 import { crossesBox, layoutDiagram, nodeBounds, overlaps } from "../lib/diagram-layout.ts";
@@ -17,7 +18,7 @@ function clearLabels(layout){
 }
 
 test("labels follow the source's free side at all four rotations without changing terminals",()=>{
-  const expected=[[420,520],[440,380],[580,400],[560,540]];
+  const expected=[[420,520],[440,380],[420,400],[560,380]];
   for(const [i,rotation] of [0,90,180,270].entries()){
     const p=blankProject(),source=newNode("source3","power",400,400,"SUP"),load=newNode("motor3","power",1000,900,"M1");
     source.rotation=rotation;p.nodes=[source,load];p.wires=[{id:"wire",from:pin(source,"L1"),to:pin(load,"U"),label:"Power supply",color:"R",bends:[]}];
@@ -25,6 +26,36 @@ test("labels follow the source's free side at all four rotations without changin
     const first=layout.routes[0].points[0];assert.ok(Math.abs(first.x-expected[i][0])<1e-6&&Math.abs(first.y-expected[i][1])<1e-6);
     assert.ok(i===0?label.y+label.h<body.y:i===1?label.x>body.x+body.w:i===2?label.y>body.y+body.h:label.x+label.w<body.x);
     assert.equal(JSON.stringify(p),before);clearLabels(layout);
+  }
+});
+
+test("AC source phases stay in reading order and retain connected wire identities after repeated rotations",()=>{
+  for(const [type,names,colours] of [
+    ["source3",["L1","L2","L3","N","PE"],["R","S","T","N","PE"]],
+    ["source1",["L","N","PE"],["R","N","PE"]],
+  ]){
+    const p=blankProject(),source=newNode(type,"power",400,400,"SUP");p.nodes=[source];
+    for(const [i,name] of names.entries()){
+      const terminal=newNode("terminal","power",400+i*200,1000,"TB"+(i+1));p.nodes.push(terminal);
+      p.wires.push({id:name,from:pin(source,name),to:pin(terminal,"1"),label:"",color:"auto",bends:[]});
+    }
+    const connections=JSON.stringify(p.wires);
+    for(let turn=0;turn<8;turn++){
+      source.rotation=turn%4*90;
+      const axis=source.rotation%180?"y":"x",other=axis==="x"?"y":"x";
+      const visible=ports(source).map(p=>({name:p.name,...portPosition(source,p.name)})).sort((a,b)=>a[axis]-b[axis]);
+      assert.deepEqual(visible.map(p=>p.name),names,`${type} at ${source.rotation}°`);
+      for(let i=1;i<visible.length;i++){
+        assert.ok(Math.abs(visible[i][axis]-visible[i-1][axis]-PIN_PITCH)<1e-6);
+        assert.ok(Math.abs(visible[i][other]-visible[0][other])<1e-6);
+      }
+      const phases=wirePhases(p),layout=layoutDiagram(p,"power");
+      for(const [i,name] of names.entries()){
+        assert.equal(phases.get(name),colours[i]);
+        assert.deepEqual(layout.routes.find(r=>r.wire.id===name).points[0],portPosition(source,name));
+      }
+      assert.equal(JSON.stringify(p.wires),connections,"rotation never renames or swaps a wire endpoint");
+    }
   }
 });
 
