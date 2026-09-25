@@ -30,10 +30,13 @@ import { useWorkspace } from "./use-workspace";
 import { Schematic,Symbol } from "./schematic";
 import { WIRE_COLORS, WIRE_COLOR_LABELS } from "../lib/wire-colors";
 import Calculator,{Choice,Numeric} from "./calculator";
+import DeviceProduct from "./device-product";
+import {applyProduct,defaultProduct,isSchneiderDevice,productFieldLocked,productSettingRange,selectedProduct,syncLinkedCoils} from "../lib/schneider-catalog";
 
 const numberText=(n:number,d=1)=>n.toLocaleString("id-ID",{maximumFractionDigits:d});
 const PARAM_LABELS:Record<string,string>={lowCurrent:"Arus kecepatan rendah (A · 0 ikut nominal)",highCurrent:"Arus kecepatan tinggi (A · 0 ikut nominal)",offDelay:"Delay OFF (detik)",blinkPeriod:"Periode kedip (detik)",offDuration:"Durasi NC (detik)",onDuration:"Durasi NO (detik)",neutralRequired:"Netral wajib tersambung",voltage:"Tegangan nominal (V)",rating:"Rating / setelan (A)",curve:"Kurva pengaman",on:"Posisi awal ON",va:"Beban coil (VA)",delay:"Delay (detik)",current:"Arus nominal (A)",powerFactor:"Faktor daya",loadFactor:"Faktor beban (×)",startFactor:"Pengali arus start",startSeconds:"Durasi start (detik)",watts:"Daya listrik (W)",value:"Suhu sensor (°C)",setpoint:"Setpoint (°C)",differential:"Differential (°C)",restartDelay:"Jeda restart (detik)",defrostInterval:"Interval defrost (detik)",defrostDuration:"Maksimum defrost (detik)",defrostEnd:"Suhu akhir defrost (°C)",drip:"Waktu tetes (detik)",fanDelay:"Jeda fan (detik)",fanWithComp:"Fan mengikuti compressor",minVoltage:"Batas tegangan PFR (V)",expected:"Urutan fase yang diharapkan",position:"Posisi awal",net:"Nama koneksi antarlembar",thermalSeconds:"Konstanta trip model (detik)",leakageMA:"Kebocoran simulasi (mA)",thresholdMA:"Ambang RCCB (mA)",color:"Warna lampu"};
 Object.assign(PARAM_LABELS,{inputMode:"Input beban",hp:"Daya HP / PK",hpUnit:"Satuan daya",hpBasis:"Dasar daya · shaft=poros",efficiency:"Efisiensi",lra:"LRA / arus start nameplate (A)",fanCount:"Jumlah fan identik",startingMethod:"Metode starting",tripSetting:"Setelan Ir (A)",magnetic:"Magnetic (× Ir)",breakingKA:"Breaking capacity (kA)",faultKA:"Isc prospektif sumber (kA)",frequency:"Frekuensi (Hz · 0 = DC / bebas)",maxVoltage:"Batas atas PFR (V)",imbalance:"Batas imbalance (%)",resetMode:"Reset mode",coolingSeconds:"Waktu pendinginan model (s)",minCurrent:"Range minimum (A)",maxCurrent:"Range maksimum (A)",highAlarm:"Alarm suhu tinggi (°C)",lowAlarm:"Alarm suhu rendah (°C)",pressureType:"Jenis pressure switch",cutOut:"Cut-out (bar)",cutIn:"Cut-in (bar)",contact:"Kontak normal",mapping:"Mapping posisi → pasangan terminal",schedule:"Jadwal · hari@HH:MM-HH:MM",override:"Manual override",secondary:"Tegangan sekunder (V)",roomBinding:"Probe thermal ruangan",wire:"ID kabel CT",brand:"Brand",model:"Model",physicalWidth:"Lebar fisik (mm)",physicalHeight:"Tinggi fisik (mm)"});
+Object.assign(PARAM_LABELS,{productProfile:"Tipe produk",coilVoltage:"Tegangan coil (V)",coilFrequency:"Frekuensi coil simulasi (Hz)",coilVA:"Beban coil saat menahan (VA)",ratingVoltage:"Tegangan acuan rating (V)",utilization:"Kategori pemakaian",auxNO:"Jumlah kontak bantu NO",auxNC:"Jumlah kontak bantu NC",tripClass:"Trip class",tripUnit:"Unit trip",orderCode:"Kode pesanan",breakingStandard:"Standar kapasitas putus",magneticAmps:"Ambang magnetic Im (A · 0 gunakan pengali)"});
 function download(content:string,name:string,type="application/json"){
   const url=URL.createObjectURL(new Blob([content],{type})),a=document.createElement("a");a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
@@ -145,7 +148,7 @@ export default function Studio(){
     if(!project||!desktop||running)return;
     if(project.nodes.length>=500){toast.error("Batas 500 komponen per project.");return;}
     const tag=type==="overloadNC"||type==="overloadNO"?(project.nodes.find(n=>n.id===selected&&kind(n)==="overload")??project.nodes.find(n=>kind(n)==="overload"))?.tag??"OL1":nextTag(project,type);
-    const n=newNode(type,tab as Sheet,x,y,tag);if(edit(p=>p.nodes.push(n))){setAdding(null);setSelected(n.id);}
+    const n=newNode(type,tab as Sheet,x,y,tag);if(edit(p=>{p.nodes.push(n);const profile=defaultProduct(n);if(profile)applyProduct(p,n.id,profile.id);})){setAdding(null);setSelected(n.id);}
   };
   const addProject=(type:"blank"|PresetId)=>{
     if((data.workspace?.entries.length??0)>=90){toast.error("Terlalu banyak project di perangkat; ekspor dan rapikan dulu.");return;}
@@ -174,9 +177,12 @@ export default function Studio(){
   const currentNode=project?.nodes.find(n=>n.id===selected),currentWire=project?.wires.find(w=>w.id===selected),selectedState=currentNode?stateOf(runtime,currentNode):null;
   const wireSizing=currentWire?sized?.recommendations.get(currentWire.id):undefined;
   const selectedDefinition=currentNode?CATALOG[currentNode.type]:null;
+  const currentProduct=currentNode?selectedProduct(currentNode):undefined;
   const updateParam=(key:string,value:string|number|boolean)=>{
     if(!currentNode)return;
     if(running&&typeof value==="number"){setRuntime(r=>stepCircuit(project!,{...r,values:{...r.values,[currentNode.id+":"+key]:value}},0));return;}
+    if(!running&&productFieldLocked(currentNode,key))return;
+    const range=productSettingRange(currentNode,key);if(range&&typeof value==="number"&&(value<range[0]||value>range[1])){toast.error(`Setelan harus ${range[0]}–${range[1]} A.`);return;}
     edit(p=>{const n=p.nodes.find(x=>x.id===selected);if(n)n.params[key]=value;});
   };
   const addBeside=(n:Node)=>{
@@ -187,11 +193,12 @@ export default function Studio(){
     Object.assign(n,position);if(edit(p=>p.nodes.push(n)))setSelected(n.id);
   };
   const addOverloadContact=(type:string)=>{if(currentNode)addBeside(newNode(type,tab as Sheet,currentNode.x+(type==="overloadNO"?320:160),currentNode.y,currentNode.tag));};
-  const renameTag=(value:string)=>{if(!value.trim()||!currentNode)return;edit(p=>p.nodes.forEach(n=>{if(n.tag===currentNode.tag)n.tag=value.slice(0,32);}));};
+  const renameTag=(value:string)=>{if(!value.trim()||!currentNode)return;edit(p=>{p.nodes.forEach(n=>{if(n.tag===currentNode.tag)n.tag=value.slice(0,32);});p.nodes.filter(n=>n.tag===value.slice(0,32)).forEach(n=>syncLinkedCoils(p,n));});};
   const inspector=<div className="inspector-content">
     {currentNode&&selectedDefinition?<>
       <div className="inspector-symbol"><svg viewBox={"-15 -10 "+(nodeSize(currentNode).width+30)+" "+(nodeSize(currentNode).height+20)}><Symbol node={currentNode} runtime={running?runtime:undefined}/></svg></div>
       <h2>{currentNode.tag}</h2><p>{selectedDefinition.description}</p>
+      {isSchneiderDevice(currentNode)&&<DeviceProduct node={currentNode} disabled={running||!desktop} onSelect={(id,coilCode)=>edit(p=>{applyProduct(p,currentNode.id,id,coilCode);})}/>}
       {running&&<div className={"device-status "+(selectedState?.tripped?"fault":"")}><span>{selectedState?.tripped?"TRIP":selectedState?.on?"AKTIF":"TIDAK AKTIF"}</span><span>{numberText(selectedState?.voltage??0)} V · {numberText(selectedState?.current??0,3)} A</span></div>}
       {!running&&desktop&&<><label className="field"><span>Tag perangkat · ikut tertaut</span><Input value={currentNode.tag} maxLength={32} onChange={e=>renameTag(e.target.value)}/></label><label className="field"><span>Keterangan</span><Input value={currentNode.label} maxLength={160} onChange={e=>edit(p=>{p.nodes.find(n=>n.id===selected)!.label=e.target.value;})}/></label></>}
       {["controller","etc974"].includes(currentNode.type)&&<>
@@ -201,9 +208,10 @@ export default function Studio(){
       {!running&&desktop&&kind(currentNode)==="overload"&&<div className="inspector-actions"><Button variant="outline" onClick={()=>addOverloadContact("overloadNC")}>Tambah NC 95–96</Button><Button variant="outline" onClick={()=>addOverloadContact("overloadNO")}>Tambah NO 97–98</Button></div>}
       {!running&&["overloadNC","overloadNO"].includes(currentNode.type)&&<Choice label="Terhubung ke overload" value={currentNode.tag} disabled={!desktop} options={[...new Set([currentNode.tag,...project!.nodes.filter(n=>kind(n)==="overload").map(n=>n.tag)])].map(tag=>({value:tag,label:tag}))} onChange={tag=>edit(p=>{p.nodes.find(n=>n.id===selected)!.tag=tag;})}/>}
       {Object.entries({...selectedDefinition.defaults,...currentNode.params}).map(([key,value])=>{
+        if(["productProfile","coilCode"].includes(key)||currentProduct&&(productFieldLocked(currentNode,key)||currentNode.type==="mccb"&&["curve","magnetic"].includes(key)))return null;
         const label=key==="va"&&["converter","transformer"].includes(kind(currentNode))?"Kapasitas output (VA)":PARAM_LABELS[key]??key;
         if(running&&!["value","current","watts","loadFactor","setpoint","leakageMA","voltage","frequency"].includes(key))return null;
-        if(typeof value==="number")return <Numeric key={key} label={label} disabled={!desktop&&!running} value={running?(runtime.values[currentNode.id+":"+key]??value):value} min={["value","setpoint","defrostEnd","lowAlarm","highAlarm"].includes(key)?-100:0} max={["powerFactor","efficiency"].includes(key)?1:1000000} onChange={v=>updateParam(key,v)}/>;
+        if(typeof value==="number"){const range=productSettingRange(currentNode,key);return <Numeric key={key} label={label} disabled={!desktop&&!running} value={running?(runtime.values[currentNode.id+":"+key]??value):value} min={range?.[0]??(["value","setpoint","defrostEnd","lowAlarm","highAlarm"].includes(key)?-100:0)} max={range?.[1]??(["powerFactor","efficiency"].includes(key)?1:1000000)} onChange={v=>updateParam(key,v)}/>;}
         if(typeof value==="boolean")return <div key={key} className="switch-field"><label htmlFor={"prop-"+key}>{label}</label><Switch id={"prop-"+key} checked={value} disabled={!desktop||running} onCheckedChange={v=>updateParam(key,v)}/></div>;
         const options=key==="curve"?["B","C","D"]:key==="inputMode"?["nameplate","quick"]:key==="hpUnit"?["HP","PK"]:key==="hpBasis"?["shaft","cooling"]:key==="resetMode"?["manual","auto"]:key==="startingMethod"?["DOL","star-delta","soft-start"]:key==="pressureType"?["HP","LP"]:key==="contact"?["NC","NO"]:key==="override"?["AUTO","ON","OFF"]:key==="roomBinding"?["","room","evaporator"]:key==="position"?[...selectorPositions(currentNode)].reverse():key==="expected"?["any","RST","TSR"]:null;
         return <label className="field" key={key}><span>{label}</span>{options?<Choice label={label} disabled={!desktop||running} value={String(value)} onChange={v=>updateParam(key,v)} options={options.map(v=>({value:v,label:v==="any"?"Kehadiran fase saja":v}))}/>:<Input type={key==="color"?"color":"text"} value={String(value)} maxLength={key==="schedule"||key==="mapping"?2000:120} disabled={!desktop||running} onChange={e=>updateParam(key,e.target.value)}/>}</label>;

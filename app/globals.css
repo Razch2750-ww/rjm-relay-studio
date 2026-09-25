@@ -179,6 +179,17 @@ input[type=color] { padding: 4px; }
 .inspector-content { padding: 20px 16px; display: flex; flex-direction: column; gap: 16px; }
 .inspector-content h2 { font-size: 18px; font-weight: 600; color: #edf2f8; }
 .inspector-content h3 { font-weight: 600; }
+.device-product { display:grid; gap:12px; padding:12px; background:#111d28; border-left:3px solid #86cda9; min-width:0; }
+.device-product-heading { display:grid; gap:4px; }
+.device-product-heading b { color:#a4dfbe; font-size:14px; }
+.device-product-heading span { color:#aebdcd; font-size:12px; }
+.device-product .choice { height:auto; min-height:38px; font-size:14px; }
+.device-product .choice [data-slot=select-value] { white-space:normal; text-align:left; }
+.device-product-code { font-family:var(--font-mono); font-size:16px; overflow-wrap:anywhere; }
+.device-product-specs { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:8px; font-size:13px; }
+.device-product-specs dt { color:#9cacbd; }
+.device-product-specs dd { margin:0; text-align:right; color:#e2eaf2; overflow-wrap:anywhere; }
+.device-product a { font-size:13px; color:#a7c8fa; }
 .inspector-content p { color: #aebdcd; line-height: 1.65; font-size: 13px; overflow-wrap: anywhere; }
 .inspector-symbol { height: 90px; padding: 5px; background: #111923; border: 1px solid #2e3c4c; }
 .inspector-symbol svg { height: 100%; width: 100%; }

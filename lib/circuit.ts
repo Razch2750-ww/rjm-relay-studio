@@ -114,6 +114,7 @@ for(const d of Object.values(CATALOG)){
   if(d.kind==="breaker"||d.kind==="fuse")Object.assign(d.defaults,{breakingKA:d.defaults.breakingKA??6,voltage:d.defaults.voltage??415});
 }
 extendCatalog(CATALOG);
+for(const d of Object.values(CATALOG))if(["contactor","overload","breaker"].includes(d.kind))d.defaults.brand="Schneider Electric";
 export const projectSheets=(p:Project)=>[{id:"power" as Sheet,name:"Power"},{id:"control" as Sheet,name:"Control"},...(p.sheets??[])];
 export function nextTag(p:Project,type:string){
  const k=CATALOG[type].kind, prefix=({breaker:"QF",rcd:"QF",isolator:"QS",converter:"PS",diode:"VD",spd:"FV",buzzer:"HA",auxiliary:"KM",timedContact:"KT",tonoff:"KT",fuse:"FU",overload:"OL",contactor:"KM",coil:"KM",no:"KM",nc:"KM",lamp:"HL",source:"G",controller:"TC",motor:"M",probe:"BT",pressure:"SP",terminal:"TB",heater:"EH",pfr:"KF",ton:"KT",toff:"KT",interval:"KT",schedule:"KT",cyclic:"KT"} as Record<string,string>)[k]??"S";

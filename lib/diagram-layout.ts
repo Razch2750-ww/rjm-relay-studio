@@ -177,7 +177,8 @@ export function layoutDiagram(project:Project,sheet:Sheet){
     let picked:Label|undefined;
     const alternatives:Label[]=[];
     for(const wrap of n.type==="etc974"?[320,140]:[140,100]){
-      const lines=n.label===n.tag?[]:wrapLabel(n.label,wrap);
+      const caption=[n.label===n.tag?"":n.label,String(n.params.model??"")].filter((s,i,all)=>s&&all.indexOf(s)===i).join(" · ");
+      const lines=wrapLabel(caption,wrap);
       const w=Math.max(textWidth(n.tag+(canTrip?" · TRIP":""),18,true),textWidth(amperage??"",14),...lines.map(s=>textWidth(s,14)))+4,h=24+(lines.length+(amperage?1:0))*16;
       const choices=candidates(body,w,h,sides).map(b=>({...b,lines,amperage}));alternatives.push(...choices);
       picked=choices.find(b=>!occupied.some(o=>overlaps(b,o))&&!stems.some(s=>crossesBox(s.a,s.b,padded(b,3))));if(picked)break;

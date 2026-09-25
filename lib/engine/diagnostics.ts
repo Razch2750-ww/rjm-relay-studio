@@ -5,7 +5,7 @@ import type { Runtime } from "./state.ts";
 import { sizeProjectCables } from "../cable-sizing.ts";
 import { nominalCurrent } from "./load.ts";
 import { cableCapacity } from "./cable.ts";
-import { protectionRating } from "./protection.ts";
+import { protectionRating,magneticThreshold } from "./protection.ts";
 import { stepCircuit } from "../simulator.ts";
 export type Diagnostic={id:string;severity:"ERROR"|"WARNING"|"INFO";target:string;message:string};
 export function checkWiring(p:Project,r:Runtime=freshRuntime()):Diagnostic[]{
@@ -43,11 +43,12 @@ export function checkWiring(p:Project,r:Runtime=freshRuntime()):Diagnostic[]{
     if(rating>0&&rating<rated.current)add("WARNING",protection.id,`${protection.tag} ${rating} A < ${n.tag} ${rated.current.toFixed(1)} A. Berpotensi trip / terlalu kecil saat running.`);
     if(pk==="overload"&&rating>rated.current*1.25&&rated.current>0)add("WARNING",protection.id,"Setelan overload >125% arus nameplate. Verifikasi data motor dan faktor servis.");
     const starting=number(n,"lra")>0?number(n,"lra")*Math.max(1,number(n,"fanCount",1)):rated.current*number(n,"startFactor",1);
-    if(pk==="breaker"&&starting>rating*(protection.params.curve==="B"?3:protection.params.curve==="D"?10:5))add("WARNING",protection.id,"Arus start berada di wilayah magnetic kurva. Cocokkan durasi start dengan kurva pabrikan.");
+    if(pk==="breaker"&&starting>(number(protection,"magneticAmps")>0?magneticThreshold(protection):rating*(protection.params.curve==="B"?3:protection.params.curve==="D"?10:5)))add("WARNING",protection.id,"Arus start berada di wilayah magnetic kurva. Cocokkan durasi start dengan kurva pabrikan.");
    }
   }
   if(k==="contactor"&&state&&state.current>number(n,"rating",25))add("ERROR",n.id,"Arus beban melebihi rating operasional kontaktor.");
   if(k==="overload"&&(number(n,"rating")<number(n,"minCurrent")||number(n,"rating")>number(n,"maxCurrent",1e8)))add("ERROR",n.id,"Setelan overload di luar range perangkat.");
+  if(n.type==="mccb"&&n.params.productProfile&&(protectionRating(n)<number(n,"minCurrent")||protectionRating(n)>number(n,"maxCurrent",1e8)))add("ERROR",n.id,"Setelan Ir MCCB di luar rentang tipe yang dipilih.");
   if(k!=="text")for(const t of ports(n))if(!ends.has(pin(n,t.name)))add("INFO",n.id,`${n.tag}-${t.name} tidak digunakan.`);
  }
  const phases=[r.phaseCurrent.R,r.phaseCurrent.S,r.phaseCurrent.T],max=Math.max(...phases),min=Math.min(...phases);
