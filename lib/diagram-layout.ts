@@ -16,8 +16,37 @@ export function nodeBounds(n:Node):Rect {
   const w=quarter?size.height:size.width,h=quarter?size.width:size.height;
   return {x:n.x+(size.width-w)/2,y:n.y+(size.height-h)/2,w,h};
 }
+const hasBody=(n:Node)=>n.type!=="tap"&&kind(n)!=="text";
+/** Compare symbol bodies only. Hitbox margins, labels and touching edges are allowed. */
+export function componentOverlap(n:Node,nodes:Node[]):Node|undefined {
+  if(!hasBody(n))return;
+  const body=nodeBounds(n);
+  return nodes.find(other=>other.id!==n.id&&other.sheet===n.sheet&&hasBody(other)&&overlaps(body,nodeBounds(other)));
+}
+/** Existing drawings stay intact; only newly introduced placement changes are checked. */
+export function placementConflict(before:Node[],after:Node[]){
+  const previous=new Map(before.map(n=>[n.id,n]));
+  for(const n of after){
+    const old=previous.get(n.id),a=old?nodeBounds(old):undefined,b=nodeBounds(n);
+    if(old&&old.type===n.type&&old.sheet===n.sheet&&old.rotation===n.rotation&&a!.x===b.x&&a!.y===b.y&&a!.w===b.w&&a!.h===b.h)continue;
+    const other=componentOverlap(n,after);if(other)return {node:n,other};
+  }
+}
+/** Find the nearest free snapped position for a copied device or auxiliary contact. */
+export function freeNodePosition(n:Node,nodes:Node[]):Point|undefined {
+  const x=Math.max(0,Math.min(10000,snap(n.x))),y=Math.max(0,Math.min(10000,snap(n.y)));
+  const body=nodeBounds({...n,x:0,y:0}),obstacles=hasBody(n)?nodes.filter(o=>o.id!==n.id&&o.sheet===n.sheet&&hasBody(o)).map(nodeBounds):[];
+  for(let radius=0;radius<=20000/SNAP;radius++)for(let dx=-radius;dx<=radius;dx++){
+    const dy=radius-Math.abs(dx);
+    for(const sign of dy?[1,-1]:[1]){
+      const point={x:x+dx*SNAP,y:y+dy*sign*SNAP};
+      if(point.x<0||point.y<0||point.x>10000||point.y>10000)continue;
+      if(!obstacles.some(o=>overlaps({...body,x:body.x+point.x,y:body.y+point.y},o)))return point;
+    }
+  }
+}
 export function alignNode(n:Node,x:number,y:number,nodes:Node[],tolerance=8){
-  const result:{x:number;y:number;guideX?:number;guideY?:number}={x:snap(x),y:snap(y)};
+  const result:{x:number;y:number;guideX?:number;guideY?:number;blocked?:boolean}={x:snap(x),y:snap(y)};
   const own=ports(n).map(p=>portPosition({...n,x,y},p.name));
   for(const axis of ["x","y"] as const){
     let best=tolerance;
@@ -28,7 +57,7 @@ export function alignNode(n:Node,x:number,y:number,nodes:Node[],tolerance=8){
     }
     result[axis]=Math.max(0,Math.min(10000,result[axis]));
   }
-  return result;
+  return componentOverlap({...n,x:result.x,y:result.y},nodes)?{x:n.x,y:n.y,blocked:true}:result;
 }
 export function wirePoints(w:Wire,nodes:Map<string,Node>,previous:RoutedWire[]=[],labels:Rect[]=[],net?:string):Point[] {
   const [a,ap]=w.from.split(":"),[b,bp]=w.to.split(":"),na=nodes.get(a),nb=nodes.get(b);

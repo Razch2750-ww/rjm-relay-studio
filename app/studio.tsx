@@ -2,7 +2,7 @@
 import { simulationWorker } from "../lib/browser-worker";
 import { newId } from "../lib/id";
 import { addWireBend } from "../lib/wire-routing";
-import { layoutDiagram } from "../lib/diagram-layout";
+import { layoutDiagram,placementConflict,freeNodePosition } from "../lib/diagram-layout";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CircuitBoard,Play,Pause,RotateCcw,Undo2,Redo2,Download,Upload,FolderOpen,Plus,ZoomIn,ZoomOut,Maximize2,Trash2,Copy,RotateCw,Cloud,WifiOff,Search,FileText,MousePointer2,Cable,Settings2,ShieldAlert,Check,Printer,ChevronLeft,ChevronRight,ChevronUp,ChevronDown,Expand,Shrink } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -83,7 +83,13 @@ export default function Studio(){
   useEffect(()=>{if(layoutReady)try{localStorage.setItem(PANEL_LAYOUT_KEY,JSON.stringify(collapsedPanels));}catch{}},[collapsedPanels,layoutReady]);
   const past=useRef<Project[]>([]),future=useRef<Project[]>([]),fileInput=useRef<HTMLInputElement>(null),timer=useRef<ReturnType<typeof setInterval>|null>(null);
   const checkpoint=()=>{if(!projectRef.current)return;past.current.push(structuredClone(projectRef.current));past.current=past.current.slice(-25);future.current=[];setHistory({past:past.current.length,future:0});};
-  const edit=(fn:(p:Project)=>void,record=true)=>{const current=projectRef.current;if(!current)return;if(record)checkpoint();const copy=structuredClone(current);fn(copy);const resolved=sizeProjectCables(copy).project;data.update(resolved);projectRef.current=resolved;};
+  const edit=(fn:(p:Project)=>void,record=true)=>{
+    const current=projectRef.current;if(!current)return false;
+    const copy=structuredClone(current);fn(copy);
+    const conflict=placementConflict(current.nodes,copy.nodes);
+    if(conflict){if(record)toast.error(`${conflict.node.tag} bertumpuk dengan ${conflict.other.tag}. Pilih ruang kosong atau geser komponen terlebih dahulu.`);return false;}
+    if(record)checkpoint();const resolved=sizeProjectCables(copy).project;data.update(resolved);projectRef.current=resolved;return true;
+  };
   const reset=()=>{setRunning(false);setRuntime(freshRuntime());};
   const action=(name:string)=>setCanvasAction(x=>({id:x.id+1,action:name}));
   const exportProject=useCallback(()=>{const p=projectRef.current;if(!p)return;try{const saved={...p,...(runtimeRef.current.now>0?{simulation:simulationRecord(runtimeRef.current,p.simulation?.scenarios)}:{})};validateProject(saved);download(JSON.stringify(saved,null,2),filename(p.name)+".rjm.json");toast.success("File project diunduh.");}catch{toast.error("Ada data tidak valid. Periksa isian sebelum ekspor.");}},[]);
@@ -139,7 +145,7 @@ export default function Studio(){
     if(!project||!desktop||running)return;
     if(project.nodes.length>=500){toast.error("Batas 500 komponen per project.");return;}
     const tag=type==="overloadNC"||type==="overloadNO"?(project.nodes.find(n=>n.id===selected&&kind(n)==="overload")??project.nodes.find(n=>kind(n)==="overload"))?.tag??"OL1":nextTag(project,type);
-    const n=newNode(type,tab as Sheet,x,y,tag);edit(p=>p.nodes.push(n));setAdding(null);setSelected(n.id);
+    const n=newNode(type,tab as Sheet,x,y,tag);if(edit(p=>p.nodes.push(n))){setAdding(null);setSelected(n.id);}
   };
   const addProject=(type:"blank"|PresetId)=>{
     if((data.workspace?.entries.length??0)>=90){toast.error("Terlalu banyak project di perangkat; ekspor dan rapikan dulu.");return;}
@@ -173,7 +179,14 @@ export default function Studio(){
     if(running&&typeof value==="number"){setRuntime(r=>stepCircuit(project!,{...r,values:{...r.values,[currentNode.id+":"+key]:value}},0));return;}
     edit(p=>{const n=p.nodes.find(x=>x.id===selected);if(n)n.params[key]=value;});
   };
-  const addOverloadContact=(type:string)=>{if(!currentNode||!project||project.nodes.length>=500)return;const n=newNode(type,tab as Sheet,currentNode.x+(type==="overloadNO"?320:160),currentNode.y,currentNode.tag);edit(p=>p.nodes.push(n));setSelected(n.id);};
+  const addBeside=(n:Node)=>{
+    const current=projectRef.current;if(!current)return;
+    if(current.nodes.length>=500){toast.error("Batas 500 komponen per project.");return;}
+    const position=freeNodePosition(n,current.nodes);
+    if(!position){toast.error("Tidak ada ruang kosong untuk komponen ini.");return;}
+    Object.assign(n,position);if(edit(p=>p.nodes.push(n)))setSelected(n.id);
+  };
+  const addOverloadContact=(type:string)=>{if(currentNode)addBeside(newNode(type,tab as Sheet,currentNode.x+(type==="overloadNO"?320:160),currentNode.y,currentNode.tag));};
   const renameTag=(value:string)=>{if(!value.trim()||!currentNode)return;edit(p=>p.nodes.forEach(n=>{if(n.tag===currentNode.tag)n.tag=value.slice(0,32);}));};
   const inspector=<div className="inspector-content">
     {currentNode&&selectedDefinition?<>
@@ -202,7 +215,7 @@ export default function Studio(){
       {kind(currentNode)==="motor"&&<p>Arus acuan: {numberText(nominalCurrent(currentNode).current,2)} A {nominalCurrent(currentNode).estimated?"· estimasi HP/PK poros":"· nameplate"}. {nominalCurrent(currentNode).error??""}</p>}
       {["overload","breaker"].includes(kind(currentNode))&&running&&<p>Thermal level: {numberText(Math.min(1,selectedState?.heat??0)*100,0)}% <progress max={1} value={selectedState?.heat??0}/></p>}
       <details><summary>Terminal & cross-reference</summary>{ports(currentNode).map(t=><p className="mono" key={t.name}>{currentNode.tag}-{t.name}</p>)}{project!.nodes.filter(n=>n.tag===currentNode.tag&&n.id!==currentNode.id).map(n=><Button key={n.id} variant="ghost" onClick={()=>locate(n.id)}>{n.sheet} · {n.label} · {String.fromCharCode(65+Math.floor(n.x/300)%26)}{Math.floor(n.y/300)+1}</Button>)}</details>
-      {!running&&desktop&&<div className="inspector-actions"><Button variant="outline" size="sm" onClick={()=>edit(p=>{p.nodes.find(n=>n.id===selected)!.rotation=(currentNode.rotation+90)%360;})}><RotateCw/>Putar</Button><Button variant="outline" size="sm" onClick={()=>edit(p=>{if(p.nodes.length<500)p.nodes.push({...structuredClone(currentNode),id:newId(),tag:nextTag(p,currentNode.type),x:currentNode.x+160,y:currentNode.y+40});})}><Copy/>Salin</Button><Button variant="outline" size="sm" onClick={()=>setConfirm("node")}><Trash2/>Hapus</Button></div>}
+      {!running&&desktop&&<div className="inspector-actions"><Button variant="outline" size="sm" onClick={()=>edit(p=>{p.nodes.find(n=>n.id===selected)!.rotation=(currentNode.rotation+90)%360;})}><RotateCw/>Putar</Button><Button variant="outline" size="sm" onClick={()=>addBeside({...structuredClone(currentNode),id:newId(),tag:nextTag(project!,currentNode.type),x:currentNode.x+160,y:currentNode.y+40})}><Copy/>Salin</Button><Button variant="outline" size="sm" onClick={()=>setConfirm("node")}><Trash2/>Hapus</Button></div>}
     </>:currentWire?<>
       <h2>Kabel {currentWire.label||"tanpa nomor"}</h2><p className="mono">{terminalName(project!,currentWire.from)}<br/>{terminalName(project!,currentWire.to)}</p>
       <p>{numberText(runtime.wireCurrent[currentWire.id]??0,3)} A · {runtime.cables[currentWire.id]?.status??"Belum diuji"}</p>
